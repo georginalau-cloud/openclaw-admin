@@ -28,6 +28,13 @@ const WORKSPACE_PATH = process.env.WORKSPACE_PATH
 const PENDING_DIR = path.join(WORKSPACE_PATH, 'memory', 'pending');
 const SKILLS_DIR  = path.join(WORKSPACE_PATH, 'skills');
 
+// LLM 提示词模板
+const FEISHU_INTENT_PROMPT_TEMPLATE =
+  '用户发来了一条消息：「{text}」\n\n' +
+  '请判断用户想做什么，输出一个 JSON 对象，格式：' +
+  '{"intent": "scale|breakfast|lunch|dinner|other", "meal_type": "breakfast|lunch|dinner|null"}\n' +
+  '只输出 JSON，不要其他内容。';
+
 // ---------------------------------------------------------------------------
 // 日期工具
 // ---------------------------------------------------------------------------
@@ -335,7 +342,7 @@ async function handleFeishuMessage(message) {
   const today = todayStr();
 
   // 尝试通过 LLM 理解用户意图
-  const contextPrompt = `用户发来了一条消息：「${text || '[图片]'}」\n\n请判断用户想做什么，输出一个 JSON 对象，格式：{"intent": "scale|breakfast|lunch|dinner|other", "meal_type": "breakfast|lunch|dinner|null"}\n只输出 JSON，不要其他内容。`;
+  const contextPrompt = FEISHU_INTENT_PROMPT_TEMPLATE.replace('{text}', text || '[图片]');
 
   let intent = 'other';
   let mealType = null;
