@@ -1,0 +1,45 @@
+{
+  "workspace": "jirou",
+  "description": "肌肉 Agent 补充定时任务配置（Phase 2）",
+  "timezone": "Asia/Shanghai",
+  "jobs": [
+    {
+      "id": "jirou-garmin-pull",
+      "agentId": "jirou",
+      "name": "肌肉-23:59抓取Garmin当日数据",
+      "schedule": {
+        "kind": "cron",
+        "expr": "59 23 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "请使用 Garmin CLI (gccli) 抓取今日数据，命令参考：\n- gccli activities --date YYYY-MM-DD --json\n- gccli steps --date YYYY-MM-DD --json\n- gccli sleep --date YYYY-MM-DD --json\n- gccli heartrate --date YYYY-MM-DD --json\n\n将结果合并保存到 memory/pending/Garmin-YYYY-MM-DD.json"
+      },
+      "delivery": {
+        "mode": "silent"
+      }
+    },
+    {
+      "id": "jirou-cleanup-daily",
+      "agentId": "jirou",
+      "name": "肌肉-08:10清理前一天过程文件",
+      "schedule": {
+        "kind": "cron",
+        "expr": "10 8 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "请清理前一天的所有过程文件，确保数据卫生。\n\n操作步骤：\n1. 计算前一天日期：yesterday=$(date -d '-1 day' +%Y-%m-%d)\n2. 查找并删除前一天的所有临时文件：\n   - rm -f ~/.openclaw/workspace-jirou/memory/pending/*-${yesterday}-*.json\n   - rm -f ~/.openclaw/workspace-jirou/memory/pending/Garmin-${yesterday}.json\n   - rm -f ~/.openclaw/workspace-jirou/memory/pending/DailyReport-${yesterday}.md\n3. 报告清理结果（删除了哪些文件）"
+      },
+      "delivery": {
+        "mode": "silent"
+      }
+    }
+  ]
+}

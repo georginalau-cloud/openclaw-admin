@@ -489,7 +489,7 @@ def main():
         default=datetime.now().strftime('%Y-%m-%d'),
         help='日期 YYYY-MM-DD（默认今天）'
     )
-    parser.add_argument('--output', help='输出文件路径（默认：memory/reports/YYYY-MM-DD.md）')
+    parser.add_argument('--output', help='输出文件路径（默认：memory/pending/DailyReport-YYYY-MM-DD.md）')
     parser.add_argument('--debug', action='store_true', help='启用调试日志')
 
     args = parser.parse_args()
@@ -508,18 +508,23 @@ def main():
         logger.error(f"日报生成失败：{e}", exc_info=True)
         sys.exit(1)
 
-    # 确定输出路径
-    output_path = args.output or os.path.join(REPORTS_DIR, f'{args.date}.md')
+    # 确定输出路径（默认保存到 pending 目录，供 OpenClaw cron 系统发送）
+    output_path = args.output or os.path.join(PENDING_DIR, f'DailyReport-{args.date}.md')
     output_path = os.path.expanduser(output_path)
 
-    # 保存日报
+    # 保存日报（pending 目录，待 OpenClaw cron 系统发送到飞书）
     dir_name = os.path.dirname(output_path)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(report_content)
-
     logger.info(f"日报已保存至：{output_path}")
+
+    # 同时归档到 reports 目录
+    archive_path = os.path.join(REPORTS_DIR, f'{args.date}.md')
+    with open(archive_path, 'w', encoding='utf-8') as f:
+        f.write(report_content)
+    logger.info(f"日报已归档至：{archive_path}")
 
     # 同时输出到 stdout
     print(report_content)
