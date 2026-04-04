@@ -3,54 +3,42 @@
 /**
  * notify.js - 飞书消息发送模块
  *
- * 负责向飞书发送提醒和确认消息。
- * 所有发送均为异步，错误被吞掉，不影响主流程。
+ * 将消息保存到 memory/pending/ 目录，
+ * 由 OpenClaw cron 系统通过内置 message 工具（WebSocket 长连接）自动发送到飞书。
+ * Agent 代码无需管理 WebSocket 连接或 Webhook URL。
  */
 
-const https = require('https');
-const http = require('http');
-const url = require('url');
+const fs = require('fs');
+const path = require('path');
 
 const logger = console;
 
+const WORKSPACE_PATH = process.env.WORKSPACE_PATH
+  || path.join(process.env.HOME || '/root', '.openclaw', 'workspace-jirou');
+
+const PENDING_DIR = path.join(WORKSPACE_PATH, 'memory', 'pending');
+
 /**
- * 发送飞书消息（底层实现）
- * @param {string} webhookUrl - 飞书 Webhook URL
- * @param {object} payload    - 消息 payload
- * @returns {Promise<void>}
+ * 保存消息到 memory/pending/ 目录
+ * OpenClaw cron 系统会检测该目录并通过 message 工具发送到飞书
+ * @param {string} type    - 消息类型：text | card | reminder | confirmation | error
+ * @param {*}      content - 消息内容
  */
-function _sendRaw(webhookUrl, payload) {
-  return new Promise((resolve, reject) => {
-    const parsed = url.parse(webhookUrl);
-    const body = JSON.stringify(payload);
-    const options = {
-      hostname: parsed.hostname,
-      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-      path: parsed.path,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
-
-    const lib = parsed.protocol === 'https:' ? https : http;
-    const req = lib.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(data);
-        } else {
-          reject(new Error(`飞书 Webhook 返回 ${res.statusCode}: ${data}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+function _savePendingMessage(type, content) {
+  try {
+    if (!fs.existsSync(PENDING_DIR)) {
+      fs.mkdirSync(PENDING_DIR, { recursive: true });
+    }
+    const timestamp = new Date().toISOString();
+    const safe = timestamp.replace(/[:.]/g, '-');
+    const filename = `msg-${safe}-${type}.json`;
+    const filePath = path.join(PENDING_DIR, filename);
+    const payload = { type, content, timestamp };
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    logger.info(`[notify] 消息已保存: ${filePath}`);
+  } catch (err) {
+    logger.error('[notify] 保存消息失败:', err.message);
+  }
 }
 
 /**
@@ -58,23 +46,7 @@ function _sendRaw(webhookUrl, payload) {
  * @param {string} text - 消息文本
  */
 async function sendText(text) {
-  const webhookUrl = process.env.FEISHU_WEBHOOK_URL;
-  if (!webhookUrl) {
-    logger.warn('[notify] FEISHU_WEBHOOK_URL 未配置，跳过发送');
-    return;
-  }
-
-  const payload = {
-    msg_type: 'text',
-    content: { text },
-  };
-
-  try {
-    await _sendRaw(webhookUrl, payload);
-    logger.info('[notify] 飞书文本消息发送成功');
-  } catch (err) {
-    logger.error('[notify] 飞书文本消息发送失败:', err.message);
-  }
+  _savePendingMessage('text', text);
 }
 
 /**
@@ -82,23 +54,7 @@ async function sendText(text) {
  * @param {object} card - 卡片内容（interactive 格式）
  */
 async function sendCard(card) {
-  const webhookUrl = process.env.FEISHU_WEBHOOK_URL;
-  if (!webhookUrl) {
-    logger.warn('[notify] FEISHU_WEBHOOK_URL 未配置，跳过发送');
-    return;
-  }
-
-  const payload = {
-    msg_type: 'interactive',
-    card,
-  };
-
-  try {
-    await _sendRaw(webhookUrl, payload);
-    logger.info('[notify] 飞书卡片消息发送成功');
-  } catch (err) {
-    logger.error('[notify] 飞书卡片消息发送失败:', err.message);
-  }
+  _savePendingMessage('card', card);
 }
 
 /**
@@ -106,8 +62,7 @@ async function sendCard(card) {
  * @param {string} message - 提醒文本
  */
 function sendReminder(message) {
-  // 异步发送，不等待结果，不抛出错误
-  sendText(message).catch(() => {});
+  _savePendingMessage('reminder', message);
 }
 
 /**
@@ -115,8 +70,7 @@ function sendReminder(message) {
  * @param {string} message - 确认文本
  */
 function sendConfirmation(message) {
-  // 异步发送，不等待结果，不抛出错误
-  sendText(message).catch(() => {});
+  _savePendingMessage('confirmation', message);
 }
 
 /**
@@ -125,8 +79,8 @@ function sendConfirmation(message) {
  * @param {Error}  err     - 错误对象
  */
 function sendError(context, err) {
-  const text = `⚠️ 肌肉喵遇到了一个问题\n\n上下文：${context}\n错误：${err && err.message ? err.message : String(err)}`;
-  sendText(text).catch(() => {});
+  const content = `⚠️ 肌肉喵遇到了一个问题\n\n上下文：${context}\n错误：${err && err.message ? err.message : String(err)}`;
+  _savePendingMessage('error', content);
 }
 
 module.exports = { sendText, sendCard, sendReminder, sendConfirmation, sendError };

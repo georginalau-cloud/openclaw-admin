@@ -63,7 +63,14 @@
 4. 计算热量差（摄入 - 消耗）
 5. 生成 markdown 格式日报，保存至 `memory/pending/DailyReport-YYYY-MM-DD.md`
 
-### 4. 发送日报（次日 07:58）
+### 4. 实时通知（提醒 / 确认 / 错误）
+
+1. Agent 调用 `notify.js` 函数（如 `sendReminder` / `sendConfirmation`）
+2. 消息以 JSON 格式保存到 `memory/pending/msg-<timestamp>-<type>.json`
+3. OpenClaw cron 系统检测到文件，通过 `message` 工具（WebSocket 长连接）发送到飞书
+4. Agent 无需管理 WebSocket 连接，也不需要配置 Webhook URL
+
+### 5. 发送日报（次日 07:58）
 
 1. OpenClaw 的 cron 系统检测到 `memory/pending/DailyReport-YYYY-MM-DD.md` 文件
 2. 通过 `message` 工具将日报内容发送至飞书
