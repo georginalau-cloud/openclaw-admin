@@ -21,9 +21,6 @@ MINIMAX_GROUP_ID=your_minimax_group_id_here
 # 免费 key，每小时 1000 次请求
 USDA_API_KEY=DEMO_KEY
 
-# 飞书 Webhook
-FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your_webhook_token
-
 # Garmin 账号（gccli 使用）
 GARMIN_EMAIL=your_garmin_email@example.com
 GARMIN_PASSWORD=your_garmin_password
@@ -317,7 +314,42 @@ python3 ~/.openclaw/workspace-jirou/skills/usda-lookup/usda_lookup.py \
 
 ---
 
-## 7. 日报生成脚本
+## 7. OpenClaw message 工具（飞书消息发送）
+
+### 工作原理
+
+飞书消息通过 OpenClaw 内置 `message` 工具发送，使用飞书官方 SDK 长连接（WebSocket）模式，无需在 Agent 代码里管理 WebSocket 连接或配置 Webhook URL。
+
+### 消息发送流程
+
+1. Agent 调用 `notify.js` 中的函数（`sendText` / `sendCard` / `sendReminder` / `sendConfirmation` / `sendError`）
+2. `notify.js` 将消息保存到 `memory/pending/msg-<timestamp>-<type>.json`
+3. OpenClaw cron 系统检测到 `memory/pending/` 中的消息文件
+4. cron 系统通过 `message` 工具（WebSocket 长连接）将消息发送到飞书
+5. 发送成功后消息文件被清理
+
+### 消息文件格式
+
+```json
+{
+  "type": "text",
+  "content": "消息内容",
+  "timestamp": "2024-01-15T08:00:00.000Z"
+}
+```
+
+消息类型：
+- `text` — 纯文本消息
+- `card` — 飞书卡片消息（interactive 格式）
+- `reminder` — 提醒消息
+- `confirmation` — 操作确认消息
+- `error` — 错误通知
+
+### 日报发送流程
+
+1. `scripts/daily-report-generator.py` 生成日报，保存到 `memory/pending/DailyReport-YYYY-MM-DD.md`
+2. OpenClaw cron 在次日 07:58 检测到该文件
+3. 通过 `message` 工具将日报内容发送到飞书
 
 ```bash
 python3 ~/.openclaw/workspace-jirou/scripts/daily-report-generator.py \
