@@ -403,7 +403,9 @@ def main():
         # 保存到文件
         if args.output:
             output_path = os.path.expanduser(args.output)
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            dir_name = os.path.dirname(output_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(output_json)
             logger.info(f"结果已保存至：{output_path}")
