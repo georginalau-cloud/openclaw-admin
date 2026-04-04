@@ -28,6 +28,7 @@ const WORKSPACE_PATH = process.env.WORKSPACE_PATH
 const PENDING_DIR  = path.join(WORKSPACE_PATH, 'memory', 'pending');
 const REPORTS_DIR  = path.join(WORKSPACE_PATH, 'memory', 'reports');
 const SCRIPTS_DIR  = path.join(WORKSPACE_PATH, 'scripts');
+const SKILLS_DIR   = path.join(WORKSPACE_PATH, 'skills');
 
 // ---------------------------------------------------------------------------
 // 日期工具
@@ -181,6 +182,9 @@ async function handleAgentTurn(intent, message) {
     case 'fortune-query':
       return _runFortuneQuery(message.content || message.message || '');
 
+    case 'bazi-analysis':
+      return _runBaziAnalysis(message.content || message.message || '');
+
     case 'image-analysis':
       return _runImageAnalysis(null);
 
@@ -235,6 +239,9 @@ async function handleFeishuMessage(message) {
     intent = 'image-analysis';
   } else if (lower.includes('http') || lower.includes('bilibili') || lower.includes('youtube') || lower.includes('视频')) {
     intent = 'video-analysis';
+  } else if ((lower.includes('精批') || lower.includes('八字精批') || lower.includes('详细分析') || lower.includes('详批')) &&
+             _hasBirthDate(text)) {
+    intent = 'bazi-analysis';
   } else if (lower.includes('运气') || lower.includes('运势') || lower.includes('今天') || lower.includes('八字') || lower.includes('流年') || lower.includes('掐指')) {
     intent = 'fortune-query';
   }
@@ -244,6 +251,9 @@ async function handleFeishuMessage(message) {
   switch (intent) {
     case 'fortune-query':
       return _runFortuneQuery(text);
+
+    case 'bazi-analysis':
+      return _runBaziAnalysis(text);
 
     case 'image-analysis':
       return _runImageAnalysis(imagePath);
@@ -431,6 +441,103 @@ async function _runImageAnalysis(imagePath) {
 }
 
 /**
+ * 检查文本中是否含有出生日期信息
+ * 匹配格式：年/月/日数字、或"X年X月X日"等中文格式
+ * @param {string} text
+ * @returns {boolean}
+ */
+function _hasBirthDate(text) {
+  // 匹配 "1990年1月15日" / "1990/01/15" / "1990-01-15" / "90年1月15" 等
+  const patterns = [
+    /\d{4}[年\/\-\.]\d{1,2}[月\/\-\.]\d{1,2}/,
+    /\d{2}年\d{1,2}月\d{1,2}日/,
+  ];
+  return patterns.some(p => p.test(text));
+}
+
+/**
+ * 从文本中提取出生参数
+ * @param {string} text - 用户消息文本
+ * @returns {{ year, month, day, hour, gender } | null}
+ */
+function _extractBirthParams(text) {
+  // 尝试匹配 YYYY年M月D日 H时
+  const fullMatch = text.match(/(\d{4})[年\/\-\.](\d{1,2})[月\/\-\.](\d{1,2})[日号]?\s*(?:(\d{1,2})[时点:：])?/);
+  if (!fullMatch) return null;
+
+  const year  = parseInt(fullMatch[1], 10);
+  const month = parseInt(fullMatch[2], 10);
+  const day   = parseInt(fullMatch[3], 10);
+  const hour  = fullMatch[4] ? parseInt(fullMatch[4], 10) : 0;
+
+  // 尝试识别性别关键词
+  let gender = 'unknown';
+  if (/男命|男性|先生|男/.test(text)) gender = 'male';
+  else if (/女命|女性|女士|女/.test(text)) gender = 'female';
+
+  return { year, month, day, hour, gender };
+}
+
+/**
+ * 执行八字精批分析，调用 suanming-bazi-analyzer skill
+ * @param {string} text - 用户消息文本（含出生日期）
+ */
+async function _runBaziAnalysis(text) {
+  const params = _extractBirthParams(text);
+
+  if (!params) {
+    notify.sendText(
+      '🔮 本喵需要您的出生日期才能进行八字精批！\n\n' +
+      '请提供格式如：\n' +
+      '「1990年1月15日 8时 男命，帮我精批八字」'
+    );
+    return { success: false, action: 'bazi-analysis-missing-params' };
+  }
+
+  const { year, month, day, hour, gender } = params;
+  logger.info(`[core] 八字精批: ${year}年${month}月${day}日${hour}时 ${gender}`);
+
+  notify.sendText('🔮 正在为您起盘精批，稍候片刻...');
+
+  const scriptPath = path.join(SKILLS_DIR, 'suanming-bazi-analyzer', 'bazi_analyzer.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    logger.error('[core] 八字精批 skill 未找到:', scriptPath);
+    notify.sendText('🔮 八字精批 skill 暂未就绪，请联系管理员配置 🙏');
+    return { success: false, action: 'bazi-skill-not-found' };
+  }
+
+  const args = [
+    '--year', String(year),
+    '--month', String(month),
+    '--day', String(day),
+    '--hour', String(hour),
+    '--gender', gender,
+    '--level', 'full',
+  ];
+
+  const result = await runPythonScript(scriptPath, args);
+
+  if (result && result.success && result.full_report) {
+    notify.sendAnalysis(result.full_report);
+
+    // 保存精批结果
+    const today = todayStr();
+    savePending(`bazi-${year}${month}${day}-${today}.json`, {
+      birth: { year, month, day, hour, gender },
+      result,
+      generated_at: new Date().toISOString(),
+    });
+
+    return { success: true, action: 'bazi-analysis-sent', birth: { year, month, day, hour, gender } };
+  }
+
+  const errorMsg = result && result.error ? result.error : '分析失败，请检查日期是否正确';
+  notify.sendText(`🔮 八字精批遇到问题：${errorMsg}\n请确认出生日期格式正确后重试。`);
+  return { success: false, action: 'bazi-analysis-failed', error: errorMsg };
+}
+
+/**
  * 处理视频链接分析（B站、YouTube 等）
  * @param {string} text - 包含视频链接的文本
  */
@@ -457,6 +564,9 @@ module.exports = {
   // 导出内部方法供测试
   _runDailyFortune,
   _runFortuneQuery,
+  _runBaziAnalysis,
   _runImageAnalysis,
   _runVideoAnalysis,
+  _hasBirthDate,
+  _extractBirthParams,
 };
