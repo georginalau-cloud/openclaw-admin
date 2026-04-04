@@ -141,10 +141,7 @@ def get_yong_shen(pillars, format_info):
         cong_ge = format_info['cong_ge_detail']
         dominant_god = cong_ge.get('dominant_god', '')
         if dominant_god in ['食神', '伤官']:
-            # 从儿格：顺从食伤
-            from .ganzhi_calculator import STEM_ELEMENTS as SE
-            yong_element = SE.get(day_stem, day_element)  # 食伤对应元素
-            ji_element = day_element  # 比劫为忌
+            # 从儿格：顺从食伤之气，用神为食伤对应的输出五行
             return {
                 'yong_shen': _get_output_element(day_element),
                 'ji_shen': [day_element, _get_input_element(day_element)],

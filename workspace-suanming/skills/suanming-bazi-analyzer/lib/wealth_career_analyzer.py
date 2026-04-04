@@ -51,7 +51,6 @@ def _assess_wealth_level(pillars, ten_gods_analysis, yong_shen_info):
     # 统计财星数量和位置
     cai_count = 0
     cai_in_month = False
-    cai_in_year = False
 
     for pillar_key, data in ten_gods_analysis.items():
         stem_tg = data.get('stem_ten_god', '')
@@ -59,8 +58,6 @@ def _assess_wealth_level(pillars, ten_gods_analysis, yong_shen_info):
             cai_count += 2
             if pillar_key == 'month_pillar':
                 cai_in_month = True
-            if pillar_key == 'year_pillar':
-                cai_in_year = True
 
         for hd in data.get('branch_hidden', []):
             if hd.get('ten_god') in ['正财', '偏财']:

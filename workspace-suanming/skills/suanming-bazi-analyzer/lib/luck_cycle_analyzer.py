@@ -168,7 +168,7 @@ def _predict_single_year(year, pillars, yong_shen, ji_shen, strength):
 
     # 综合判断吉凶
     fortune_score, fortune_desc = _score_year_fortune(
-        year_element, year_ten_god, yong_shen, ji_shen, interactions
+        year_element, yong_shen, ji_shen, interactions
     )
 
     # 各方面预测
@@ -226,7 +226,7 @@ def _check_year_interactions(year_branch, pillars):
     return interactions
 
 
-def _score_year_fortune(year_element, year_ten_god, yong_shen, ji_shen, interactions):
+def _score_year_fortune(year_element, yong_shen, ji_shen, interactions):
     """综合评分流年吉凶"""
     score = 50  # 基础分
 

@@ -96,14 +96,11 @@ def _analyze_marriage(pillars, ten_gods_analysis, yong_shen_info, gender):
 
     # 统计配偶星数量
     spouse_count = 0
-    spouse_in_day = False
 
     for pillar_key, data in ten_gods_analysis.items():
         stem_tg = data.get('stem_ten_god', '')
         if stem_tg in [spouse_star_main, spouse_star_side]:
             spouse_count += 1
-            if pillar_key == 'day_pillar':
-                spouse_in_day = True
 
         for hd in data.get('branch_hidden', []):
             if hd.get('ten_god') in [spouse_star_main, spouse_star_side]:

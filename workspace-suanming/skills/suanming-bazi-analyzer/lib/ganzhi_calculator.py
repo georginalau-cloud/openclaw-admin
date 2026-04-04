@@ -222,8 +222,7 @@ def _get_month_branch_index(year, month, day):
 
     base_idx = month_to_branch.get(month, 0)
 
-    # 节气日期前后的修正
-    solar_term_day = SOLAR_TERMS_APPROX[base_idx % 12][1] if base_idx < 12 else 4
+    # 节气日期前后的修正（1月立春前仍为上年丑月，2月立春前仍为丑月）
     if month in [1, 2] and day < 6:
         if month == 2 and day < 4:
             return 11  # 还在丑月
