@@ -2,7 +2,7 @@
   "id": "suanming-bazi-analyzer",
   "name": "八字精批分析器",
   "version": "1.0.0",
-  "description": "基于子平法的完整八字精批 skill，供算命喵 agent 在分析用户八字时自动调用。涵盖命盘排布、十神分析、性格画像、六亲关系、财富事业、健康预警、大运流年、趋吉避凶八大模块。",
+  "description": "基于子平法的完整八字精批 skill，供算命喵 agent 在分析用户八字时自动调用。涵盖命盘排布、十神分析、性格画像、六亲关系、财富事业、健康预警、大运流年、趋吉避凶七大分析模块。",
   "author": "算命喵",
   "entry": "handler.js",
   "language": "javascript",

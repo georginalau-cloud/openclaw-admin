@@ -176,13 +176,14 @@ function getHelpElements(element) {
  * @returns {string[]}
  */
 function getWeakenElements(element) {
-  const generatedByMap = { 木: '火', 火: '土', 土: '金', 金: '水', 水: '木' };
+  const generatesMap    = { 木: '火', 火: '土', 土: '金', 金: '水', 水: '木' };
+  const controlsMap     = { 木: '土', 火: '金', 土: '水', 金: '木', 水: '火' };
   const controlledByMap = { 木: '金', 火: '水', 土: '木', 金: '火', 水: '土' };
   return [
-    generatedByMap[element],  // 食伤（我生）
-    controlledByMap[element], // 官杀（克我）
-    controlledByMap[element], // 财（我克的反向）
-  ].filter(Boolean);
+    generatesMap[element],    // 食伤（我生之元素）
+    controlsMap[element],     // 财（我克之元素）
+    controlledByMap[element], // 官杀（克我之元素）
+  ].filter((v, i, a) => v != null && a.indexOf(v) === i);
 }
 
 /**
