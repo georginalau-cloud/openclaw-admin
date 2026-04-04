@@ -15,6 +15,8 @@ logs/
 # 运行时生成的数据文件（不提交到仓库）
 workspace-jirou/memory/pending/
 workspace-jirou/memory/reports/
+workspace-suanming/memory/pending/
+workspace-suanming/memory/reports/
 
 # macOS
 .DS_Store
