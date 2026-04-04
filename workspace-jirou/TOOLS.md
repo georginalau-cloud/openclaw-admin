@@ -314,7 +314,7 @@ python3 ~/.openclaw/workspace-jirou/skills/usda-lookup/usda_lookup.py \
 
 ---
 
-## 8. OpenClaw message 工具（飞书消息发送）
+## 7. OpenClaw message 工具（飞书消息发送）
 
 ### 工作原理
 

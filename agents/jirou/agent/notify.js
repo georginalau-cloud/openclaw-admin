@@ -31,7 +31,8 @@ function _savePendingMessage(type, content) {
     }
     const timestamp = new Date().toISOString();
     const safe = timestamp.replace(/[:.]/g, '-');
-    const filename = `msg-${safe}-${type}.json`;
+    const rand = Math.random().toString(36).slice(2, 7);
+    const filename = `msg-${safe}-${rand}-${type}.json`;
     const filePath = path.join(PENDING_DIR, filename);
     const payload = { type, content, timestamp };
     fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
