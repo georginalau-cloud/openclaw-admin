@@ -57,7 +57,7 @@
 ## 📊 日报生成检查（00:05 次日）
 
 - [ ] `scripts/daily-report-generator.py` 执行完毕
-- [ ] `memory/reports/YYYY-MM-DD.md` 文件已生成
+- [ ] `memory/pending/DailyReport-YYYY-MM-DD.md` 文件已生成
 - [ ] 日报包含所有可用数据
 - [ ] 热量差计算正确
 
@@ -65,9 +65,17 @@
 
 ## 📨 日报发送检查（08:00 次日）
 
-- [ ] 07:58 日报已发送至飞书
-- [ ] 飞书消息卡片格式正确
-- [ ] 用户可点击「保存日报」
+- [ ] `memory/pending/DailyReport-YYYY-MM-DD.md` 文件存在
+- [ ] OpenClaw cron 已通过 `message` 工具将日报发送至飞书
+- [ ] 飞书消息内容格式正确
+
+---
+
+## 🧹 清理检查（08:15）
+
+- [ ] 前一天的所有 `memory/pending/` 文件已删除
+- [ ] 只保留当天新生成的文件
+- [ ] 报告清理结果
 
 ---
 
@@ -80,7 +88,6 @@
 | Google Vision API | 检查 `.env` 中 `GOOGLE_VISION_API_KEY` | 非空 |
 | MiniMax API | 检查 `.env` 中 `MINIMAX_API_KEY` | 非空 |
 | USDA API | 检查 `.env` 中 `USDA_API_KEY` | 非空 |
-| 飞书 Webhook | 检查 `.env` 中 `FEISHU_WEBHOOK_URL` | 非空 |
 | Garmin CLI | `gccli --version` | 版本号输出 |
 | EasyOCR | Python `import easyocr` | 无报错 |
 
@@ -134,12 +141,12 @@ ls ~/.openclaw/media/inbound/
 
 ### 飞书消息发送失败
 
-**症状**：日报无法发送
+**症状**：日报无法发送至飞书
 
 **排查步骤**：
-1. 检查 `FEISHU_WEBHOOK_URL` 是否正确
-2. 测试 Webhook：`curl -X POST $FEISHU_WEBHOOK_URL -d '{"msg_type":"text","content":{"text":"test"}}'`
-3. 检查消息格式是否符合飞书 API 要求
+1. 检查 `memory/pending/DailyReport-YYYY-MM-DD.md` 是否存在
+2. 确认 OpenClaw cron 系统的 `message` 工具配置是否正常
+3. 检查 OpenClaw 日志中是否有发送错误记录
 
 ---
 

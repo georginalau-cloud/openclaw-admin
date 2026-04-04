@@ -28,8 +28,9 @@
 20:00  🔔 晚餐二次提醒（如果 19:30 未提供）
 22:00  🔔 晚上体重提醒
 23:00  🔔 最后提醒（三餐/体重仍未提供时发出）
-23:59  ✅ Garmin 数据抓取 + 日报生成
-07:58  📨 发送前一天的健康日报给用户
+23:59  ✅ Garmin 数据抓取 + 日报生成 → 保存到 pending/
+07:58  📨 (次日) OpenClaw 自动发送日报到飞书
+08:10  🧹 (次日) 清理前一天所有临时文件
 ```
 
 ---
@@ -56,17 +57,17 @@
 
 ### 3. 日报生成（23:59）
 
-1. 调用 `scripts/daily-report-generator.py` 生成当日日报
-2. 脚本会合并：有品秤数据 + 三餐数据 + Garmin 数据（gccli）
-3. 计算热量差（摄入 - 消耗）
-4. 生成 markdown 格式日报，存储至 `memory/reports/YYYY-MM-DD.md`
+1. 使用 `gccli` 抓取当日 Garmin 数据（步数、运动、睡眠、心率），保存至 `memory/pending/Garmin-YYYY-MM-DD.json`
+2. 调用 `scripts/daily-report-generator.py` 生成当日日报
+3. 脚本会合并：有品秤数据 + 三餐数据 + Garmin 数据
+4. 计算热量差（摄入 - 消耗）
+5. 生成 markdown 格式日报，保存至 `memory/pending/DailyReport-YYYY-MM-DD.md`
 
 ### 4. 发送日报（次日 07:58）
 
-1. 读取前一天的日报 `memory/reports/YYYY-MM-DD.md`
-2. 使用 `templates/daily-report-card.md` 格式化为飞书消息卡片
-3. 发送给用户
-4. 用户确认后，保存为 `health YYYY-MM-DD.md`
+1. OpenClaw 的 cron 系统检测到 `memory/pending/DailyReport-YYYY-MM-DD.md` 文件
+2. 通过 `message` 工具将日报内容发送至飞书
+3. 无需手动管理 webhook，完全自动化
 
 ---
 
@@ -91,8 +92,10 @@
 │   │   ├── YYYY-MM-DD-evening-scale.json
 │   │   ├── YYYY-MM-DD-breakfast.json
 │   │   ├── YYYY-MM-DD-lunch.json
-│   │   └── YYYY-MM-DD-dinner.json
-│   └── reports/               # 已生成日报
+│   │   ├── YYYY-MM-DD-dinner.json
+│   │   ├── Garmin-YYYY-MM-DD.json
+│   │   └── DailyReport-YYYY-MM-DD.md  # 待发送日报
+│   └── reports/               # 已归档日报
 │       └── YYYY-MM-DD.md
 ├── skills/
 │   ├── ocr-scale/             # 有品秤 OCR
@@ -104,7 +107,8 @@
 │   ├── daily-report.md
 │   └── daily-report-card.md
 └── cron/
-    └── jobs.json
+    ├── jobs.json
+    └── cron-jobs-supplement.json
 ```
 
 ---
@@ -117,4 +121,3 @@
 - MiniMax API（key 存于 `~/.openclaw/.env`）
 - USDA FoodData Central API（key 存于 `~/.openclaw/.env`）
 - Garmin Connect CLI（gccli 已配置）
-- 飞书 Webhook（存于 `~/.openclaw/.env`）
