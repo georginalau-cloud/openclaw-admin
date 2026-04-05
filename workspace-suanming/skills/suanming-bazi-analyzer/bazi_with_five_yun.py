@@ -116,7 +116,7 @@ NAYIN_DESC = {
     '炉中火': '主锻炼磨砺，刚烈果断',
     '大林木': '主茂盛繁荣，广纳人脉',
     '路旁土': '主广博包容，踏实奉献',
-    '剑锋金': '主收敛、主决断',
+    '剑锋金': '主收敛，主决断',
     '山头火': '主光明显达，志向高远',
     '涧下水': '主深流不息，智慧内敛',
     '城头土': '主稳固守成，重视根基',
@@ -495,7 +495,7 @@ def build_five_yun_result(analyze_result, current_year=None):
         dimensions = analyze_dayun_dimensions(cycle_obj, pillars)
         recent_dayun_analyzed.append({'cycle_obj': cycle_obj, 'dimensions': dimensions})
 
-        # JSON-serialisable 版本
+        # JSON-serializable 版本
         recent_dayun_json.append({
             'age':       cycle_obj['age'],
             'ganzhi':    cycle_obj['ganzhi'],
