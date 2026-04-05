@@ -30,6 +30,23 @@ const REPORTS_DIR  = path.join(WORKSPACE_PATH, 'memory', 'reports');
 const SCRIPTS_DIR  = path.join(WORKSPACE_PATH, 'scripts');
 const SKILLS_DIR   = path.join(WORKSPACE_PATH, 'skills');
 
+// 八字精批 skill 路径
+const BAZI_ANALYZER_PATH = path.join(WORKSPACE_PATH, 'skills', 'suanming-bazi-analyzer', 'handler.js');
+
+// 懒加载八字精批 skill（仅在需要时加载）
+let _baziAnalyzer = null;
+function getBaziAnalyzer() {
+  if (!_baziAnalyzer) {
+    try {
+      _baziAnalyzer = require(BAZI_ANALYZER_PATH);
+      logger.info('[core] 八字精批 skill 已加载');
+    } catch (err) {
+      logger.warn('[core] 八字精批 skill 加载失败，将使用降级方案:', err.message);
+    }
+  }
+  return _baziAnalyzer;
+}
+
 // ---------------------------------------------------------------------------
 // 日期工具
 // ---------------------------------------------------------------------------
@@ -179,6 +196,9 @@ async function handleAgentTurn(intent, message) {
     case 'daily-fortune':
       return _runDailyFortune();
 
+    case 'bazi-analyzer':
+      return _runBaziAnalyzer(message.content || message.message || '');
+
     case 'fortune-query':
       return _runFortuneQuery(message.content || message.message || '');
 
@@ -249,6 +269,9 @@ async function handleFeishuMessage(message) {
   logger.info(`[core] 飞书消息意图: ${intent}`);
 
   switch (intent) {
+    case 'bazi-analyzer':
+      return _runBaziAnalyzer(text);
+
     case 'fortune-query':
       return _runFortuneQuery(text);
 
@@ -272,6 +295,93 @@ async function handleFeishuMessage(message) {
 // ---------------------------------------------------------------------------
 // 内部处理逻辑
 // ---------------------------------------------------------------------------
+
+/**
+ * 运行八字精批分析（调用 suanming-bazi-analyzer skill）
+ * 从用户消息文本中提取生辰信息，或向用户询问
+ * @param {string} text - 用户消息文本
+ */
+async function _runBaziAnalyzer(text) {
+  const baziAnalyzer = getBaziAnalyzer();
+
+  if (!baziAnalyzer) {
+    notify.sendText('🔮 八字精批功能暂时不可用，请联系管理员检查 skill 配置。');
+    return { success: false, action: 'bazi-analyzer-unavailable' };
+  }
+
+  // 从消息中尝试提取生辰信息（格式：YYYY-MM-DD HH 或 YYYY年MM月DD日 HH时）
+  const birthInfo = parseBirthInfoFromText(text);
+
+  if (!birthInfo) {
+    notify.sendText(
+      '🔮 请提供您的公历生日以进行八字精批分析！\n\n' +
+      '格式示例：\n' +
+      '• 1990-01-15 14 男\n' +
+      '• 1985年6月20日 辰时 女\n\n' +
+      '（年月日必填，时辰和性别可选）'
+    );
+    return { success: true, action: 'bazi-analyzer-asked-input' };
+  }
+
+  notify.sendText('🔮 本喵正在为您排盘精批，请稍候...');
+
+  try {
+    const result = await baziAnalyzer.handle(birthInfo, { includeAncientBooks: true });
+
+    if (result.success) {
+      // 保存精批报告
+      const today = todayStr();
+      const reportFile = `${today}-bazi-report.json`;
+      savePending(reportFile, {
+        date: today,
+        input: birthInfo,
+        report: result.fullReport,
+        sections: result.sections,
+        generatedAt: result.generatedAt,
+      });
+
+      notify.sendAnalysis(`🔮 八字精批报告\n\n${result.fullReport}`);
+      return { success: true, action: 'bazi-analyzer-completed', date: today };
+    } else {
+      notify.sendText(`🔮 精批分析遇到问题：${result.error || '未知错误'}，请检查生辰信息格式是否正确。`);
+      return { success: false, action: 'bazi-analyzer-failed', error: result.error };
+    }
+  } catch (err) {
+    logger.error('[core] 八字精批分析失败:', err.message);
+    notify.sendError('八字精批', err);
+    return { success: false, action: 'bazi-analyzer-error', error: err.message };
+  }
+}
+
+/**
+ * 从文本中提取出生信息
+ * 支持格式：
+ *   1990-01-15 14 male / 1990-01-15 14 female
+ *   1990年1月15日 14时 男/女
+ * @param {string} text
+ * @returns {object|null} { year, month, day, hour, gender } 或 null
+ */
+function parseBirthInfoFromText(text) {
+  // 尝试匹配 YYYY-MM-DD
+  const dateMatch = text.match(/(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})/);
+  if (!dateMatch) return null;
+
+  const year  = parseInt(dateMatch[1], 10);
+  const month = parseInt(dateMatch[2], 10);
+  const day   = parseInt(dateMatch[3], 10);
+
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  // 提取时辰
+  const hourMatch = text.match(/(\d{1,2})[时:点]/);
+  const hour = hourMatch ? parseInt(hourMatch[1], 10) : 12;
+
+  // 提取性别
+  const isFemale = /female|女命|女|坤命/i.test(text);
+  const gender   = isFemale ? 'female' : 'male';
+
+  return { year, month, day, hour, gender };
+}
 
 /**
  * 执行每日运势推送（Cron 早 8 点触发）
@@ -567,6 +677,6 @@ module.exports = {
   _runBaziAnalysis,
   _runImageAnalysis,
   _runVideoAnalysis,
-  _hasBirthDate,
-  _extractBirthParams,
+  _runBaziAnalyzer,
+  parseBirthInfoFromText,
 };

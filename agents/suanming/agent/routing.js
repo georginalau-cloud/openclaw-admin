@@ -71,6 +71,9 @@ function extractAgentTurnIntent(message) {
   if (text === 'fortune-query' || text.includes('运气')) {
     return 'fortune-query';
   }
+  if (text === 'bazi-analyzer' || text.includes('八字精批') || text.includes('排盘') || text.includes('四柱') || text.includes('精批')) {
+    return 'bazi-analyzer';
+  }
   if (text === 'image-analysis' || text.includes('图片') || text.includes('古籍') || text.includes('命理图')) {
     return 'image-analysis';
   }
