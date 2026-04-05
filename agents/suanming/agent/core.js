@@ -609,7 +609,7 @@ async function _runBaziAnalysis(text) {
 
   notify.sendText('🔮 正在为您起盘精批，稍候片刻...');
 
-  const scriptPath = path.join(SKILLS_DIR, 'suanming-bazi-analyzer', 'bazi_analyzer.py');
+  const scriptPath = path.join(SKILLS_DIR, 'suanming-bazi-analyzer', 'bazi_with_five_yun.py');
 
   if (!fs.existsSync(scriptPath)) {
     logger.error('[core] 八字精批 skill 未找到:', scriptPath);
