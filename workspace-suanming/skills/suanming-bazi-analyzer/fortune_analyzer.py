@@ -247,10 +247,10 @@ class BaziFortuneAnalyzer:
             label = nayin if nayin else nayin_el
             if nayin_el in ('金',):
                 score -= 1
-            insights.append(f'{label}纳音，{msg.split("，", 1)[1]}')
+            insights.append(f'{label}纳音，{self._nayin_suffix(msg)}')
 
         # 4. 干支关系 → 实际影响
-        he_list   = relations.get('he', [])
+        he_list    = relations.get('he', [])
         chong_list = relations.get('chong', [])
         xing_list  = relations.get('xing', [])
         hai_list   = relations.get('hai', [])
@@ -260,7 +260,7 @@ class BaziFortuneAnalyzer:
             insights.append('大运相合，感情融洽，有利于婚配或巩固关系')
         if chong_list:
             score -= 2
-            targets = '、'.join(chong_list[:2])
+            targets = self._join_items(chong_list)
             insights.append(f'大运冲{targets}，感情易生波折，宜包容化解')
         if xing_list:
             score -= 1
@@ -343,7 +343,7 @@ class BaziFortuneAnalyzer:
             insights.append('大运相合，事业顺畅，人脉助力财运')
         if chong_list:
             score -= 2
-            targets = '、'.join(chong_list[:2])
+            targets = self._join_items(chong_list)
             insights.append(f'大运冲{targets}，财运波动，谨慎大额投资')
         if xing_list:
             score -= 1
@@ -410,7 +410,7 @@ class BaziFortuneAnalyzer:
                 score -= 1
             elif nayin_el in ('木', '水'):
                 score += 1
-            insights.append(f'{label}纳音，{msg.split("，", 1)[1]}')
+            insights.append(f'{label}纳音，{self._nayin_suffix(msg)}')
 
         # 4. 刑冲 → 子女威胁
         xing_list  = relations.get('xing', [])
@@ -492,7 +492,7 @@ class BaziFortuneAnalyzer:
             msg = nayin_msg[nayin_el]
             if nayin_el in ('火', '木'):
                 score += 1
-            insights.append(f'{label}纳音，{msg.split("，", 1)[1]}')
+            insights.append(f'{label}纳音，{self._nayin_suffix(msg)}')
 
         # 4. 干支关系 → 职场人脉
         he_list    = relations.get('he', [])
@@ -573,7 +573,7 @@ class BaziFortuneAnalyzer:
             insights.append('大运带刑，需防意外伤害与手术风险')
         if chong_list:
             score -= 1
-            targets = '、'.join(chong_list[:2])
+            targets = self._join_items(chong_list)
             insights.append(f'大运冲{targets}，健康有波动，注意压力管理')
         if hai_list:
             score -= 1
@@ -601,6 +601,17 @@ class BaziFortuneAnalyzer:
             return '平'
         else:
             return '凶'
+
+    @staticmethod
+    def _nayin_suffix(msg):
+        """从纳音描述字符串中提取第一个逗号后的部分。"""
+        parts = msg.split('，', 1)
+        return parts[1] if len(parts) > 1 else msg
+
+    @staticmethod
+    def _join_items(items, limit=2):
+        """将列表前 limit 项以顿号连接成字符串。"""
+        return '、'.join(items[:limit])
 
 
 # ── CLI 入口 ──────────────────────────────────────────────────────
