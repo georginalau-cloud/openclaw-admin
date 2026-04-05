@@ -20,7 +20,11 @@ const WORKSPACE_PATH = process.env.WORKSPACE_PATH
 const PENDING_DIR = path.join(WORKSPACE_PATH, 'memory', 'pending');
 
 // 确保 pending 目录存在（模块加载时初始化一次）
-fs.mkdirSync(PENDING_DIR, { recursive: true });
+try {
+  fs.mkdirSync(PENDING_DIR, { recursive: true });
+} catch (err) {
+  console.error('[notify] 无法创建 pending 目录:', err.message);
+}
 
 /**
  * 生成消息文件名
