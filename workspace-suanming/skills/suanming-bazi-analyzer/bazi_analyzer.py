@@ -39,6 +39,7 @@ from lib.luck_cycle_analyzer import (
 )
 from lib.advice_generator import generate_advice
 from lib.ancient_books_fetcher import get_relevant_passages, format_passages_for_report
+from lib.five_yun_analyzer import FiveYunAnalyzer
 
 
 def parse_args():
@@ -67,7 +68,7 @@ def format_pillar_display(pillar):
 
 def build_full_report(pillars, ten_gods_analysis, format_analysis, character_profile,
                       six_relations, wealth_career, health_info, luck_info, advice,
-                      birth_info, gender, level='full'):
+                      birth_info, gender, level='full', five_yun_data=None):
     """
     构建完整精批报告文字
     """
@@ -169,6 +170,14 @@ def build_full_report(pillars, ten_gods_analysis, format_analysis, character_pro
     lines.append(advice.get('summary', ''))
 
     lines.append('')
+
+    # ── 第八模块：五运深度分析 ────────────────────────────
+    if five_yun_data:
+        lines.append('【八】五运深度分析')
+        lines.append('─' * 40)
+        lines.append(five_yun_data.get('summary_text', ''))
+        lines.append('')
+
     lines.append(separator)
     lines.append('  ⚠ 本报告基于传统命理学，仅供参考。')
     lines.append('  命运在于自身努力，知命不认命，逢凶化吉。')
@@ -232,11 +241,21 @@ def analyze(year, month, day, hour, gender='unknown', level='full', years_to_pre
     # ── 9. 趋吉避凶 ────────────────────────────────────
     advice = generate_advice(pillars, yong_shen_info, format_analysis)
 
-    # ── 10. 生成报告 ───────────────────────────────────
+    # ── 10. 五运分析 ───────────────────────────────────
+    five_yun_analyzer = FiveYunAnalyzer(luck_info, pillars, gender=gender)
+    five_yun_summary_text = five_yun_analyzer.build_summary_text()
+    five_yun_summary_dict = five_yun_analyzer.build_summary_dict()
+    five_yun_data = {
+        'summary_text': five_yun_summary_text,
+        'summary_dict': five_yun_summary_dict,
+    }
+
+    # ── 11. 生成报告 ───────────────────────────────────
     report_text = build_full_report(
         pillars, ten_gods_analysis, format_analysis, character_profile,
         six_relations, wealth_career, health_info, luck_info, advice,
-        pillars['birth_info'], gender, level
+        pillars['birth_info'], gender, level,
+        five_yun_data=five_yun_data,
     )
 
     return {
@@ -264,6 +283,7 @@ def analyze(year, month, day, hour, gender='unknown', level='full', years_to_pre
         'health_summary': health_info.get('summary', ''),
         'luck_summary': luck_report,
         'advice_summary': advice.get('summary', ''),
+        'five_yun_summary': five_yun_summary_dict,
         'full_report': report_text,
         'generated_at': datetime.datetime.now().isoformat(),
     }
