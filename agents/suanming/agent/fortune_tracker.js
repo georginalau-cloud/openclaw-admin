@@ -239,10 +239,10 @@ function formatLiunyaAnalysis(liunyaPred, dimension) {
     const dimLabel = DIMENSION_LABELS[dimension] || dimension;
     lines.push(`【${dimLabel}】分析：`);
     const aspectMap = {
-      intimate: aspects.love,
-      wealth:   aspects.wealth,
-      children: aspects.career,
-      official: aspects.career,
+      intimate:  aspects.love,
+      wealth:    aspects.wealth,
+      children:  null,  // no children-specific aspect in yearly prediction; use advice instead
+      official:  aspects.career,
       longevity: null,
     };
     const aspectText = aspectMap[dimension] || '流年数据参考中';
@@ -548,7 +548,7 @@ function _buildScoreBar(score) {
  * @returns {Promise<object>} - 完整报告 JSON
  */
 function fetchFullReport(birthData) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const { year, month, day, hour = 0, gender = 'unknown' } = birthData;
     const args = [
       BAZI_ANALYZER_PATH,
@@ -562,7 +562,7 @@ function fetchFullReport(birthData) {
     execFile('python3', args, { timeout: 60000 }, (err, stdout, stderr) => {
       if (err) {
         logger.error('[fortune_tracker] bazi_analyzer 调用失败:', err.message);
-        resolve({ success: false, error: err.message });
+        reject(new Error(`bazi_analyzer 调用失败: ${err.message}`));
         return;
       }
       try {

@@ -164,7 +164,8 @@ class FiveYunAnalyzer:
 
     def get_recent_dayun(self, count=3):
         """
-        获取近N个大运（以当前年份为基准，包含当前大运及后续）
+        获取近N个大运（以当前年份为基准，包含当前大运及前后各一段，
+        具体逻辑：year_end >= current_year - 5 的大运，即包括刚结束不久的大运）
 
         返回: 大运数据列表，每条包含 index, gz, stem, branch, age_start, age_end,
               year_start, year_end, wangshuai, nayin, ten_god, relations

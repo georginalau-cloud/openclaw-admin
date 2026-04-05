@@ -8,6 +8,7 @@ liuyue_liuri_analyzer.py - 流月流日逐级追踪分析模块
 """
 
 import datetime
+import calendar
 
 from .ganzhi_calculator import (
     HEAVENLY_STEMS, EARTHLY_BRANCHES, STEM_ELEMENTS, BRANCH_ELEMENTS,
@@ -26,8 +27,8 @@ from .five_yun_analyzer import (
 # 月支顺序（寅=正月，卯=二月...）
 LIUYUE_BRANCH_ORDER = ['寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑']
 
-# 农历月份 → 流月地支序号（0-based，0=寅月）
-SOLAR_MONTH_TO_BRANCH = {
+# 公历月份 → 流月地支序号（0-based，0=寅月，以节气近似）
+SOLAR_MONTH_TO_BRANCH_IDX = {
     1: 11,  2: 0,  3: 1,  4: 2,  5: 3,  6: 4,
     7: 5,   8: 6,  9: 7, 10: 8, 11: 9, 12: 10,
 }
@@ -67,7 +68,7 @@ def get_liuyue_ganzhi(year, month):
     year_stem = HEAVENLY_STEMS[year_stem_idx]
 
     # 流月地支序号
-    branch_idx = SOLAR_MONTH_TO_BRANCH.get(month, 0)
+    branch_idx = SOLAR_MONTH_TO_BRANCH_IDX.get(month, 0)
     branch = LIUYUE_BRANCH_ORDER[branch_idx]
 
     # 流月天干（五虎遁年起月法）
@@ -175,7 +176,7 @@ class LiuyueLiuriAnalyzer:
 
     # ─── 公共接口 ──────────────────────────────────────────────────────────────
 
-    def get_liuyue_for_year(self, year, month):
+    def get_liuyue_for_month(self, year, month):
         """
         获取指定年月的流月数据，并补充与命局的关系信息
 
@@ -187,6 +188,11 @@ class LiuyueLiuriAnalyzer:
         """
         liuyue = get_liuyue_ganzhi(year, month)
         return self._enrich(liuyue)
+
+    # Keep backward-compatible alias
+    def get_liuyue_for_year(self, year, month):
+        """Alias for get_liuyue_for_month (backward compatibility)."""
+        return self.get_liuyue_for_month(year, month)
 
     def get_liuri_for_date(self, year, month, day):
         """
@@ -214,7 +220,7 @@ class LiuyueLiuriAnalyzer:
         """
         if months is None:
             months = list(range(1, 13))
-        return [self.get_liuyue_for_year(year, m) for m in months]
+        return [self.get_liuyue_for_month(year, m) for m in months]
 
     def analyze_liuyue(self, year, month, dimension=None):
         """
@@ -227,7 +233,7 @@ class LiuyueLiuriAnalyzer:
         返回:
             包含分析结果的字典
         """
-        liuyue = self.get_liuyue_for_year(year, month)
+        liuyue = self.get_liuyue_for_month(year, month)
 
         if dimension is None:
             return {
@@ -283,7 +289,7 @@ class LiuyueLiuriAnalyzer:
         """
         months_data = []
         for month in range(1, 13):
-            liuyue = self.get_liuyue_for_year(year, month)
+            liuyue = self.get_liuyue_for_month(year, month)
             result = self._analyze_dimension(liuyue, dimension)
             months_data.append({
                 'month': month,
@@ -305,7 +311,6 @@ class LiuyueLiuriAnalyzer:
         返回:
             按评分排序的流日列表（最高在前，取前10日）
         """
-        import calendar
         _, days_in_month = calendar.monthrange(year, month)
         days_data = []
 
@@ -342,7 +347,7 @@ class LiuyueLiuriAnalyzer:
         lines.append('─' * 44)
 
         for month in range(1, 13):
-            liuyue = self.get_liuyue_for_year(year, month)
+            liuyue = self.get_liuyue_for_month(year, month)
             gz = liuyue['gz']
             wangshuai = liuyue['wangshuai']
             ten_god = liuyue.get('ten_god', '')
