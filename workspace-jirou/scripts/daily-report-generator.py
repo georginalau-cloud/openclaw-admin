@@ -103,6 +103,39 @@ def load_meal_data(date_str: str, meal_type: str) -> dict:
     return {}
 
 
+def _run_gccli(args: list, label: str, timeout: int = 30):
+    """
+    执行 gccli 命令并返回解析后的 JSON 数据。
+
+    Args:
+        args: gccli 子命令及参数列表（不含 'gccli' 本身）
+        label: 日志中显示的数据名称
+        timeout: 超时秒数
+
+    Returns:
+        解析后的 JSON 对象，失败返回 None
+    """
+    try:
+        result = subprocess.run(
+            ['gccli'] + args,
+            capture_output=True, text=True, timeout=timeout
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            logger.info(f"Garmin {label} 数据获取成功")
+            return data
+        else:
+            if result.stderr.strip():
+                logger.warning(f"Garmin {label} 命令返回错误：{result.stderr.strip()}")
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Garmin {label} 数据获取超时")
+    except FileNotFoundError:
+        logger.warning("gccli 未安装或不在 PATH 中")
+    except json.JSONDecodeError as e:
+        logger.warning(f"Garmin {label} 数据解析失败：{e}")
+    return None
+
+
 def get_garmin_data(date_str: str) -> dict:
     """
     从 Garmin CLI 获取当天数据
@@ -115,57 +148,40 @@ def get_garmin_data(date_str: str) -> dict:
     """
     garmin_data = {}
 
-    # 获取活动/步数数据
-    try:
-        result = subprocess.run(
-            ['gccli', 'activities', '--date', date_str, '--json'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            activities = json.loads(result.stdout)
-            garmin_data['activities'] = activities
-            logger.info(f"Garmin 活动数据获取成功：{len(activities)} 条")
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Garmin 活动数据获取失败：{e}")
+    # 一次性获取健康摘要（步数、心率、活动、SpO2、身体能量、压力等大量指标）
+    summary = _run_gccli(['health', 'summary', date_str, '--json'], '健康摘要')
+    if summary:
+        garmin_data['summary'] = summary
 
-    # 获取步数数据
-    try:
-        result = subprocess.run(
-            ['gccli', 'steps', '--date', date_str, '--json'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            steps_data = json.loads(result.stdout)
-            garmin_data['steps'] = steps_data
-            logger.info("Garmin 步数数据获取成功")
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Garmin 步数数据获取失败：{e}")
+    # 睡眠数据（得分与睡眠阶段）
+    sleep = _run_gccli(['health', 'sleep', date_str, '--json'], '睡眠')
+    if sleep:
+        garmin_data['sleep'] = sleep
 
-    # 获取睡眠数据（前一天的睡眠）
-    try:
-        result = subprocess.run(
-            ['gccli', 'sleep', '--date', date_str, '--json'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            sleep_data = json.loads(result.stdout)
-            garmin_data['sleep'] = sleep_data
-            logger.info("Garmin 睡眠数据获取成功")
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Garmin 睡眠数据获取失败：{e}")
+    # 心率详细数据
+    hr = _run_gccli(['health', 'hr', date_str, '--json'], '心率')
+    if hr:
+        garmin_data['heartrate'] = hr
 
-    # 获取心率数据
-    try:
-        result = subprocess.run(
-            ['gccli', 'heartrate', '--date', date_str, '--json'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            hr_data = json.loads(result.stdout)
-            garmin_data['heartrate'] = hr_data
-            logger.info("Garmin 心率数据获取成功")
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
-        logger.warning(f"Garmin 心率数据获取失败：{e}")
+    # HRV 数据（summary 不含，需单独获取）
+    hrv = _run_gccli(['health', 'hrv', date_str, '--json'], 'HRV')
+    if hrv:
+        garmin_data['hrv'] = hrv
+
+    # SpO2 详细数据（含 lastSevenDaysAvgSpO2，summary 中没有）
+    spo2 = _run_gccli(['health', 'spo2', date_str, '--json'], 'SpO2')
+    if spo2:
+        garmin_data['spo2'] = spo2
+
+    # 压力详细数据（含 stressValuesArray 可统计数据点数）
+    stress = _run_gccli(['health', 'stress', 'view', date_str, '--json'], '压力')
+    if stress:
+        garmin_data['stress'] = stress
+
+    # VO2max / 最大摄氧量
+    max_metrics = _run_gccli(['health', 'max-metrics', '--json'], 'VO2max')
+    if max_metrics:
+        garmin_data['max_metrics'] = max_metrics
 
     return garmin_data
 
@@ -181,73 +197,177 @@ def parse_garmin_summary(garmin_data: dict) -> dict:
         解析后的摘要数据
     """
     summary = {
+        # 基础运动
         'steps': None,
         'distance_km': None,
         'active_calories': None,
-        'exercise_calories': None,
         'total_calories_burned': None,
+        'bmr_calories': None,
+        # 心率
         'resting_heart_rate': None,
-        'hrv': None,
+        'max_heart_rate': None,
+        # 睡眠
         'sleep_score': None,
         'sleep_duration_min': None,
         'sleep_deep_min': None,
         'sleep_light_min': None,
         'sleep_rem_min': None,
         'sleep_awake_min': None,
+        # HRV
+        'hrv_weekly_avg': None,
+        'hrv_last_night_avg': None,
+        'hrv_last_night_5min_high': None,
+        'hrv_status': None,
+        'hrv_baseline_low': None,
+        'hrv_baseline_high': None,
+        # 压力
+        'max_stress_level': None,
+        'avg_stress_level': None,
+        'stress_count': None,
+        'low_stress_pct': None,
+        'medium_stress_pct': None,
+        'high_stress_pct': None,
+        # SpO2 / 血氧
+        'avg_spo2': None,
+        'lowest_spo2': None,
+        'latest_spo2': None,
+        'seven_day_avg_spo2': None,
+        # 呼吸
+        'avg_respiration': None,
+        'highest_respiration': None,
+        'lowest_respiration': None,
+        # 身体能量
+        'body_battery_charged': None,
+        'body_battery_drained': None,
+        'body_battery_highest': None,
+        'body_battery_lowest': None,
+        'body_battery_most_recent': None,
+        'body_battery_at_wake': None,
+        # 活动详情
+        'highly_active_seconds': None,
+        'active_seconds': None,
+        'sedentary_seconds': None,
+        'floors_ascended': None,
+        'floors_descended': None,
+        # VO2max
+        'vo2max': None,
+        # 运动记录（暂无来源，保留结构兼容）
         'exercises': [],
     }
 
-    # 解析步数数据
-    steps_data = garmin_data.get('steps', {})
-    if isinstance(steps_data, dict):
-        summary['steps'] = steps_data.get('totalSteps') or steps_data.get('steps')
-        summary['distance_km'] = steps_data.get('totalDistance') or steps_data.get('distanceInMeters', 0) / 1000
-        summary['active_calories'] = steps_data.get('activeKilocalories') or steps_data.get('calories')
-    elif isinstance(steps_data, list) and steps_data:
-        day = steps_data[0]
-        summary['steps'] = day.get('totalSteps')
-        summary['distance_km'] = day.get('totalDistanceMeters', 0) / 1000
-        summary['active_calories'] = day.get('activeKilocalories')
+    # ── health summary（最全面的基础数据源）──
+    health_summary = garmin_data.get('summary', {})
+    if isinstance(health_summary, dict):
+        summary['steps'] = health_summary.get('totalSteps')
+        dist_m = health_summary.get('totalDistanceMeters')
+        if dist_m is not None:
+            summary['distance_km'] = round(dist_m / 1000, 2)
+        summary['active_calories'] = health_summary.get('activeKilocalories')
+        summary['bmr_calories'] = health_summary.get('bmrKilocalories')
+        summary['resting_heart_rate'] = health_summary.get('restingHeartRate')
+        summary['max_heart_rate'] = health_summary.get('maxHeartRate')
+        # 压力（summary 字段名 averageStressLevel）
+        summary['avg_stress_level'] = health_summary.get('averageStressLevel')
+        summary['max_stress_level'] = health_summary.get('maxStressLevel')
+        summary['low_stress_pct'] = health_summary.get('lowStressPercentage')
+        summary['medium_stress_pct'] = health_summary.get('mediumStressPercentage')
+        summary['high_stress_pct'] = health_summary.get('highStressPercentage')
+        # SpO2（summary 字段名 averageSpo2，注意大小写与 spo2 命令不同）
+        summary['avg_spo2'] = health_summary.get('averageSpo2')
+        summary['lowest_spo2'] = health_summary.get('lowestSpo2')
+        summary['latest_spo2'] = health_summary.get('latestSpo2')
+        # 呼吸
+        summary['avg_respiration'] = health_summary.get('avgWakingRespirationValue')
+        summary['highest_respiration'] = health_summary.get('highestRespirationValue')
+        summary['lowest_respiration'] = health_summary.get('lowestRespirationValue')
+        # 身体能量
+        summary['body_battery_charged'] = health_summary.get('bodyBatteryChargedValue')
+        summary['body_battery_drained'] = health_summary.get('bodyBatteryDrainedValue')
+        summary['body_battery_highest'] = health_summary.get('bodyBatteryHighestValue')
+        summary['body_battery_lowest'] = health_summary.get('bodyBatteryLowestValue')
+        summary['body_battery_most_recent'] = health_summary.get('bodyBatteryMostRecentValue')
+        summary['body_battery_at_wake'] = health_summary.get('bodyBatteryAtWakeTime')
+        # 活动分解
+        summary['highly_active_seconds'] = health_summary.get('highlyActiveSeconds')
+        summary['active_seconds'] = health_summary.get('activeSeconds')
+        summary['sedentary_seconds'] = health_summary.get('sedentarySeconds')
+        summary['floors_ascended'] = health_summary.get('floorsAscended')
+        summary['floors_descended'] = health_summary.get('floorsDescended')
 
-    # 解析心率数据
-    hr_data = garmin_data.get('heartrate', {})
-    if isinstance(hr_data, dict):
-        summary['resting_heart_rate'] = hr_data.get('restingHeartRate') or hr_data.get('minHeartRate')
-        summary['hrv'] = hr_data.get('lastNight5MinHigh') or hr_data.get('hrv')
-
-    # 解析睡眠数据
+    # ── 睡眠数据 ──
     sleep_data = garmin_data.get('sleep', {})
     if isinstance(sleep_data, dict):
-        summary['sleep_score'] = sleep_data.get('sleepScores', {}).get('overall') or sleep_data.get('score')
+        scores = sleep_data.get('sleepScores', {})
+        summary['sleep_score'] = (
+            (scores.get('overall') if isinstance(scores, dict) else None)
+            or sleep_data.get('overallScore')
+            or sleep_data.get('score')
+        )
         duration = sleep_data.get('sleepTimeSeconds', 0)
         summary['sleep_duration_min'] = round(duration / 60) if duration else None
-        # 睡眠阶段
         stages = sleep_data.get('sleepLevels', {})
-        summary['sleep_deep_min'] = round(stages.get('deep', 0) / 60) if stages else None
-        summary['sleep_light_min'] = round(stages.get('light', 0) / 60) if stages else None
-        summary['sleep_rem_min'] = round(stages.get('rem', 0) / 60) if stages else None
-        summary['sleep_awake_min'] = round(stages.get('awake', 0) / 60) if stages else None
+        if isinstance(stages, dict) and stages:
+            summary['sleep_deep_min'] = round(stages.get('deep', 0) / 60)
+            summary['sleep_light_min'] = round(stages.get('light', 0) / 60)
+            summary['sleep_rem_min'] = round(stages.get('rem', 0) / 60)
+            summary['sleep_awake_min'] = round(stages.get('awake', 0) / 60)
 
-    # 解析活动数据（运动）
-    activities = garmin_data.get('activities', [])
-    if isinstance(activities, list):
-        for activity in activities:
-            exercise = {
-                'name': activity.get('activityName', '未知运动'),
-                'duration_min': round(activity.get('duration', 0) / 60),
-                'calories': activity.get('calories'),
-                'avg_hr': activity.get('averageHR'),
-                'max_hr': activity.get('maxHR'),
-            }
-            summary['exercises'].append(exercise)
-            if exercise.get('calories'):
-                summary['exercise_calories'] = (summary['exercise_calories'] or 0) + exercise['calories']
+    # ── 心率数据（补充 summary 中没有的字段）──
+    hr_data = garmin_data.get('heartrate', {})
+    if isinstance(hr_data, dict):
+        if summary['resting_heart_rate'] is None:
+            summary['resting_heart_rate'] = hr_data.get('restingHeartRate') or hr_data.get('minHeartRate')
 
-    # 计算总消耗
+    # ── HRV 数据 ──
+    hrv_raw = garmin_data.get('hrv', {})
+    if isinstance(hrv_raw, dict):
+        hrv_s = hrv_raw.get('hrvSummary', {})
+        if isinstance(hrv_s, dict):
+            summary['hrv_weekly_avg'] = hrv_s.get('weeklyAvg')
+            summary['hrv_last_night_avg'] = hrv_s.get('lastNightAvg')
+            summary['hrv_last_night_5min_high'] = hrv_s.get('lastNight5MinHigh')
+            summary['hrv_status'] = hrv_s.get('status')
+            baseline = hrv_s.get('baseline', {})
+            if isinstance(baseline, dict):
+                summary['hrv_baseline_low'] = baseline.get('balancedLow')
+                summary['hrv_baseline_high'] = baseline.get('balancedUpper')
+
+    # ── SpO2 详细数据（lastSevenDaysAvgSpO2 仅在 spo2 命令中）──
+    spo2_data = garmin_data.get('spo2', {})
+    if isinstance(spo2_data, dict):
+        # 以 spo2 命令数据优先（字段名 averageSpO2，大写 O）
+        if spo2_data.get('averageSpO2') is not None:
+            summary['avg_spo2'] = spo2_data['averageSpO2']
+        if spo2_data.get('lowestSpO2') is not None:
+            summary['lowest_spo2'] = spo2_data['lowestSpO2']
+        if spo2_data.get('latestSpO2') is not None:
+            summary['latest_spo2'] = spo2_data['latestSpO2']
+        summary['seven_day_avg_spo2'] = spo2_data.get('lastSevenDaysAvgSpO2')
+
+    # ── 压力详细数据（stress_count 来自 stressValuesArray 长度）──
+    stress_data = garmin_data.get('stress', {})
+    if isinstance(stress_data, dict):
+        # stress 命令字段名 avgStressLevel（summary 中为 averageStressLevel）
+        if stress_data.get('maxStressLevel') is not None:
+            summary['max_stress_level'] = stress_data['maxStressLevel']
+        if stress_data.get('avgStressLevel') is not None:
+            summary['avg_stress_level'] = stress_data['avgStressLevel']
+        stress_values = stress_data.get('stressValuesArray') or []
+        if stress_values:
+            summary['stress_count'] = len(stress_values)
+
+    # ── VO2max ──
+    max_metrics = garmin_data.get('max_metrics')
+    if isinstance(max_metrics, list) and max_metrics:
+        entry = max_metrics[0]
+        summary['vo2max'] = entry.get('vo2MaxValue') or entry.get('mostRecentVO2Max')
+    elif isinstance(max_metrics, dict):
+        summary['vo2max'] = max_metrics.get('vo2MaxValue') or max_metrics.get('mostRecentVO2Max')
+
+    # ── 总消耗 ──
     active = summary.get('active_calories') or 0
-    exercise = summary.get('exercise_calories') or 0
-    if active or exercise:
-        summary['total_calories_burned'] = active + exercise
+    if active:
+        summary['total_calories_burned'] = active
 
     return summary
 
@@ -371,8 +491,9 @@ def generate_report(date_str: str) -> str:
     bone_morning = fmt(morning_scale.get('bone_mass'), ' kg')
     bone_evening = fmt(evening_scale.get('bone_mass'), ' kg')
     resting_hr = fmt(garmin.get('resting_heart_rate'), ' bpm')
-    hrv = fmt(garmin.get('hrv'), ' ms')
-    bmr_display = fmt(bmr, ' kcal')
+    max_hr = fmt(garmin.get('max_heart_rate'), ' bpm')
+    bmr_display = fmt(garmin.get('bmr_calories') or bmr, ' kcal')
+    vo2max_display = fmt(garmin.get('vo2max'), ' mL/kg/min')
     sleep_score = fmt(garmin.get('sleep_score'))
     sleep_duration = format_minutes(garmin.get('sleep_duration_min'))
     sleep_deep = format_minutes(garmin.get('sleep_deep_min'))
@@ -385,7 +506,6 @@ def generate_report(date_str: str) -> str:
         steps = f"{garmin['steps']:,}步"
     distance = f"{garmin['distance_km']:.1f} km" if garmin.get('distance_km') else '-'
     active_cals = fmt(garmin.get('active_calories'), ' kcal')
-    exercise_cals = fmt(garmin.get('exercise_calories'), ' kcal')
     total_burned_display = fmt(total_burned, ' kcal')
     total_intake_display = f"~{total_intake} kcal" if total_intake > 0 else '-'
 
@@ -397,35 +517,33 @@ def generate_report(date_str: str) -> str:
     else:
         calorie_diff_display = '-'
 
-    # 运动详情
-    exercise_lines = []
-    if garmin.get('exercises'):
-        for ex in garmin['exercises']:
-            ex_name = ex.get('name', '未知运动')
-            ex_dur = format_minutes(ex.get('duration_min'))
-            ex_cals = fmt(ex.get('calories'), ' kcal')
-            ex_avg_hr = fmt(ex.get('avg_hr'), ' bpm')
-            ex_max_hr = fmt(ex.get('max_hr'), ' bpm')
-            exercise_lines.extend([
-                f'  - 运动类型：{ex_name}',
-                f'  - 运动时长：{ex_dur}',
-                f'  - 运动消耗：{ex_cals}',
-                f'  - 平均心率：{ex_avg_hr}',
-                f'  - 最大心率：{ex_max_hr}',
-            ])
-    else:
-        exercise_lines = [
-            '  - 运动类型：-',
-            '  - 运动时长：-',
-            '  - 运动消耗：-',
-            '  - 平均心率：-',
-            '  - 最大心率：-',
-        ]
+    # HRV 状态展示
+    hrv_status_raw = garmin.get('hrv_status') or ''
+    hrv_status_map = {
+        'BALANCED': 'BALANCED ✅',
+        'UNBALANCED': 'UNBALANCED ⚠️',
+        'LOW': 'LOW ❗',
+    }
+    hrv_status_display = hrv_status_map.get(hrv_status_raw, hrv_status_raw) if hrv_status_raw else '-'
+
+    # 活动时间格式化
+    highly_active = format_minutes(
+        round(garmin['highly_active_seconds'] / 60) if garmin.get('highly_active_seconds') else None
+    )
+    active_time = format_minutes(
+        round(garmin['active_seconds'] / 60) if garmin.get('active_seconds') else None
+    )
+    sedentary_time = format_minutes(
+        round(garmin['sedentary_seconds'] / 60) if garmin.get('sedentary_seconds') else None
+    )
 
     # 消耗说明
     active_sum = garmin.get('active_calories') or 0
-    exercise_sum = garmin.get('exercise_calories') or 0
-    consumption_note = f"*消耗 = 支出1 + 支出2 = {active_sum + exercise_sum} kcal" if (active_sum or exercise_sum) else '*消耗 = 数据不可用'
+    consumption_note = f"*消耗 = 活动总消耗 = {active_sum} kcal" if active_sum else '*消耗 = 数据不可用'
+
+    # SpO2 7天均值格式化（保留一位小数）
+    seven_day_spo2 = garmin.get('seven_day_avg_spo2')
+    seven_day_spo2_display = f"{seven_day_spo2:.1f}%" if seven_day_spo2 is not None else '-'
 
     report = f"""📊 {date_display} 健康日报
 
@@ -439,14 +557,44 @@ def generate_report(date_str: str) -> str:
   - 蛋白质：{protein_morning}（晨）/ {protein_evening}（晚）
   - 骨量：{bone_morning}（晨）/ {bone_evening}（晚）
   - 静息心率: {resting_hr}
-  - HRV: {hrv}
+  - 最大心率: {max_hr}
   - BMR: {bmr_display}
-  - 最大摄氧量: -
+  - 最大摄氧量: {vo2max_display}
 
 ## 😴 睡眠情况
   - 得分: {sleep_score}
   - 时长: {sleep_duration}
   - 阶段：深睡{sleep_deep} / 浅睡{sleep_light} / REM {sleep_rem} / 清醒{sleep_awake}
+
+## ⚡ 身体能量
+  - 充电值: {fmt(garmin.get('body_battery_charged'))}
+  - 放电值: {fmt(garmin.get('body_battery_drained'))}
+  - 最高值: {fmt(garmin.get('body_battery_highest'))}
+  - 最低值: {fmt(garmin.get('body_battery_lowest'))}
+  - 最近值: {fmt(garmin.get('body_battery_most_recent'))}
+  - 起床时: {fmt(garmin.get('body_battery_at_wake'))}
+
+## 💓 心率变异性（HRV）
+  - 昨晚平均: {fmt(garmin.get('hrv_last_night_avg'), ' ms')}
+  - 周平均: {fmt(garmin.get('hrv_weekly_avg'), ' ms')}
+  - 5分钟最高: {fmt(garmin.get('hrv_last_night_5min_high'), ' ms')}
+  - 状态: {hrv_status_display}
+  - 基线范围: {fmt(garmin.get('hrv_baseline_low'))} - {fmt(garmin.get('hrv_baseline_high'))} ms
+
+## 🔴 压力情况
+  - 最大压力: {fmt(garmin.get('max_stress_level'))}
+  - 平均压力: {fmt(garmin.get('avg_stress_level'))}
+  - 数据点数: {fmt(garmin.get('stress_count'))}
+  - 压力分布: 低 {fmt(garmin.get('low_stress_pct'), '%')} / 中 {fmt(garmin.get('medium_stress_pct'), '%')} / 高 {fmt(garmin.get('high_stress_pct'), '%')}
+
+## 🩸 血氧及呼吸
+  - 平均血氧: {fmt(garmin.get('avg_spo2'), '%')}
+  - 最低血氧: {fmt(garmin.get('lowest_spo2'), '%')}
+  - 最近血氧: {fmt(garmin.get('latest_spo2'), '%')}
+  - 7天均值: {seven_day_spo2_display}
+  - 平均呼吸率: {fmt(garmin.get('avg_respiration'), ' rpm')}
+  - 最高呼吸率: {fmt(garmin.get('highest_respiration'), ' rpm')}
+  - 最低呼吸率: {fmt(garmin.get('lowest_respiration'), ' rpm')}
 
 ## 🔥 热量情况
   - 总摄入: {total_intake_display}
@@ -460,13 +608,15 @@ def generate_report(date_str: str) -> str:
 {format_meal_section(snack, '零食')}
 
 ### 💪 昨日消耗
-#### 🏃 日常活动（支出1）
+#### 🏃 日常活动
   - 步数: {steps}
   - 距离: {distance}
   - 活动消耗: {active_cals}
-
-#### 🏋️ 昨日运动（支出2）
-{chr(10).join(exercise_lines)}
+  - 剧烈活动: {highly_active}
+  - 中等活动: {active_time}
+  - 久坐时间: {sedentary_time}
+  - 爬升楼层: {fmt(garmin.get('floors_ascended'))} 层
+  - 下降楼层: {fmt(garmin.get('floors_descended'))} 层
 
 {consumption_note}
 """
