@@ -329,6 +329,7 @@ def parse_garmin_summary(garmin_data: dict) -> dict:
             summary['hrv_status'] = hrv_s.get('status')
             baseline = hrv_s.get('baseline', {})
             if isinstance(baseline, dict):
+                # API uses 'balancedLow' / 'balancedUpper' (not 'balancedHigh') for the HRV balance range
                 summary['hrv_baseline_low'] = baseline.get('balancedLow')
                 summary['hrv_baseline_high'] = baseline.get('balancedUpper')
 
@@ -541,6 +542,18 @@ def generate_report(date_str: str) -> str:
     active_sum = garmin.get('active_calories') or 0
     consumption_note = f"*消耗 = 活动总消耗 = {active_sum} kcal" if active_sum else '*消耗 = 数据不可用'
 
+    # HRV 基线范围（仅当两端值均有效时展示范围，否则显示单值或 -）
+    hrv_bl_low = garmin.get('hrv_baseline_low')
+    hrv_bl_high = garmin.get('hrv_baseline_high')
+    if hrv_bl_low is not None and hrv_bl_high is not None:
+        hrv_baseline_display = f"{hrv_bl_low} - {hrv_bl_high} ms"
+    elif hrv_bl_low is not None:
+        hrv_baseline_display = f"{hrv_bl_low} ms"
+    elif hrv_bl_high is not None:
+        hrv_baseline_display = f"{hrv_bl_high} ms"
+    else:
+        hrv_baseline_display = '-'
+
     # SpO2 7天均值格式化（保留一位小数）
     seven_day_spo2 = garmin.get('seven_day_avg_spo2')
     seven_day_spo2_display = f"{seven_day_spo2:.1f}%" if seven_day_spo2 is not None else '-'
@@ -579,7 +592,7 @@ def generate_report(date_str: str) -> str:
   - 周平均: {fmt(garmin.get('hrv_weekly_avg'), ' ms')}
   - 5分钟最高: {fmt(garmin.get('hrv_last_night_5min_high'), ' ms')}
   - 状态: {hrv_status_display}
-  - 基线范围: {fmt(garmin.get('hrv_baseline_low'))} - {fmt(garmin.get('hrv_baseline_high'))} ms
+  - 基线范围: {hrv_baseline_display}
 
 ## 🔴 压力情况
   - 最大压力: {fmt(garmin.get('max_stress_level'))}
