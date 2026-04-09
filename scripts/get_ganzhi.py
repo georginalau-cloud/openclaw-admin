@@ -33,6 +33,11 @@ def get_ganzhi_from_188188(target_date):
         response = urllib.request.urlopen(req, timeout=10)
         html = response.read().decode('utf-8')
 
+        # 如果页面显示"改版中"，则抓取失败
+        if '改版中' in html or '恢复正常访问' in html:
+            print("188188.org is under maintenance, skipping", file=sys.stderr)
+            return None
+
         # 提取日柱：找"日柱"或直接在"今日八字"段落里找
         # 格式：丙午 \n 壬辰 \n 壬子 \n 庚子
         # 先找"年柱"后的干支
@@ -108,35 +113,74 @@ def get_hour_ganzhi(day_gan_str, hour):
     return tiangan[hour_gan] + zhi[hour_zhi_idx]
 
 def local_ganzhi(target_date):
-    """本地算法计算干支（备用）"""
-    # 基准：已知 2026-04-06 = 丁未日（cron成功验证）
-    # 从丁未反推基准：1900-01-01 = 辛丑
-    base = date(1900, 1, 1)
-    days = (target_date - base).days
+    """本地算法计算干支（完全自力更生，不依赖外部）"""
+    # 基准：2026-01-01 = 乙巳年 戊子月 乙亥日（沛柔验证）
+    ref = date(2026, 1, 1)
+    ref_day_gan = 1   # 乙
+    ref_day_zhi = 11  # 亥
+    days = (target_date - ref).days
 
-    # 辛丑: 辛=7(0-9), 丑=1(0-11)
-    # 1900-01-01 = day 0 → (7, 1)
-    # 1900-01-02 = day 1 → (8, 2) = 壬寅
-    day_gan = (7 + days) % 10
-    day_zhi = (1 + days) % 12
+    # 日柱：按天干地支依次循环递加
+    day_gan = (ref_day_gan + days) % 10
+    day_zhi = (ref_day_zhi + days) % 12
     day_gz = tiangan[day_gan] + zhi[day_zhi]
 
-    # 年柱：1984=甲子 → 1984年起算
+    # 年柱：1984=甲子 → 2026=丙午
     year_diff = target_date.year - 1984
     year_gan = year_diff % 10
     year_zhi = year_diff % 12
     year_gz = tiangan[year_gan] + zhi[year_zhi]
 
-    # 月柱：用节气口诀（简化）
-    # 1984年起寅月=丙寅，按年干推算
-    # 甲己年起丙寅，乙庚年起戊寅，丙辛年起庚寅，丁壬年起壬寅，戊癸年起甲寅
-    year_gan_start = {0: 2, 1: 4, 2: 6, 3: 8, 4: 0, 5: 2, 6: 4, 7: 6, 8: 8, 9: 0}
-    # 月份数（1-12对应寅-丑）
-    m = target_date.month
-    start_gan = year_gan_start[year_gan]
-    month_gan = (start_gan + m - 1) % 10
-    month_zhi = (m + 1) % 12  # 寅=2...辰=4...丑=12→0
-    month_gz = tiangan[month_gan] + zhi[month_zhi]
+    # 月柱：用12节气定地支，五虎遁定天干
+    # 12节气（每月起点）：立春寅月, 惊蛰卯月, 清明辰月, 立夏巳月...
+    # ...芒种午月, 小暑未月, 立秋申月, 白露酉月...
+    # ...寒露戌月, 立冬亥月, 大雪子月, 小寒丑月
+    year_gan_idx = year_gan  # 丙=2
+
+    # 五虎遁：年干起月干
+    # 甲己→丙寅, 乙庚→戊寅, 丙辛→庚寅, 丁壬→壬寅, 戊癸→甲寅
+    # 五虎遁：年干配对起寅月天干
+    # 甲己→丙寅, 乙庚→戊寅, 丙辛→庚寅, 丁壬→壬寅, 戊癸→甲寅
+    wuhudun = {
+        0: 2, 5: 2,   # 甲, 己 → 丙寅
+        1: 4, 6: 4,   # 乙, 庚 → 戊寅
+        2: 6, 7: 6,   # 丙, 辛 → 庚寅
+        3: 8, 8: 8,   # 丁, 壬 → 壬寅
+        4: 0, 9: 0    # 戊, 癸 → 甲寅
+    }
+    start_gan = wuhudun[year_gan_idx]  # 寅月起的天干
+
+    # 节气日期定月地支（地支顺序：子0, 丑1, 寅2, 卯3, 辰4, 巳5, 午6, 未7, 申8, 酉9, 戌10, 亥11）
+    # 12节气作为12个月的起点
+    jie_list = [
+        (1, 5, 1, '小寒'),   # 丑月：1月5日后
+        (2, 4, 2, '立春'),   # 寅月：2月4日后
+        (3, 5, 3, '惊蛰'),   # 卯月：3月5日后
+        (4, 5, 4, '清明'),   # 辰月：4月5日后
+        (5, 5, 5, '立夏'),   # 巳月：5月5日后
+        (6, 5, 6, '芒种'),   # 午月：6月5日后
+        (7, 7, 7, '小暑'),   # 未月：7月7日后
+        (8, 7, 8, '立秋'),   # 申月：8月7日后
+        (9, 7, 9, '白露'),   # 酉月：9月7日后
+        (10, 8, 10, '寒露'), # 戌月：10月8日后
+        (11, 7, 11, '立冬'), # 亥月：11月7日后
+        (12, 7, 0, '大雪'),  # 子月：12月7日后
+    ]
+
+    # 找节气确定月地支
+    month_zhi_idx = 2  # 默认寅月
+    for m, d, zhi_idx, name in jie_list:
+        if target_date.month > m or (target_date.month == m and target_date.day >= d):
+            month_zhi_idx = zhi_idx
+
+    # 1月1-4日还属上一年（小寒前=亥月）
+    if target_date.month == 1 and target_date.day < 5:
+        month_zhi_idx = 10  # 亥月
+
+    # 月干：寅月天干 + (当前月地支 - 寅月地支)
+    # 寅月固定对应地支index=2
+    month_gan = (start_gan + (month_zhi_idx - 2)) % 10
+    month_gz = tiangan[month_gan] + zhi[month_zhi_idx]
 
     return {
         'year': year_gz,
@@ -155,12 +199,16 @@ def main():
     else:
         target_date = datetime.now().date()
 
-    # 优先用188188.org（精确），失败则本地算法
+    # 优先本地算法，备用188188.org
+    result = local_ganzhi(target_date)
+
+    # 用188188.org验证日柱（最关键的字段），不一致时以本地为准并标记
     online = get_ganzhi_from_188188(target_date)
     if online:
-        result = online
-    else:
-        result = local_ganzhi(target_date)
+        # 日柱不一致时记录但不切换（本地已用沛柔基准校准）
+        if online['day'] != result['day']:
+            print(f"Warning: local day={result['day']}, online day={online['day']}", file=sys.stderr)
+            result['online_day'] = online['day']
 
     # 补充时柱（用当前小时）
     now = datetime.now()

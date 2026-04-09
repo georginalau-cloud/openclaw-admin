@@ -71,13 +71,13 @@ def extract_ganzhi_from_report(report_text):
     return ganzhi
 
 
-def generate_five_yun_section(bazi_data, full_report):
+def generate_five_yun_section(bazi_result, full_report):
     """生成五运分析摘要"""
     try:
-        analyzer = BaziFortuneAnalyzer(bazi_data, full_report)
+        analyzer = BaziFortuneAnalyzer(bazi_result, full_report)
         
         # 获取近3个大运
-        recent_dayun = analyzer.get_recent_dayun(count=3) if hasattr(analyzer, 'get_recent_dayun') else []
+        recent_dayun = analyzer.dayun[:3] if analyzer.dayun else []
         
         # 生成格式化摘要
         summary_lines = [
@@ -157,7 +157,7 @@ def main():
         ganzhi = extract_ganzhi_from_report(full_report)
     
     # 第三步：生成五运摘要
-    five_yun_result = generate_five_yun_section(ganzhi, full_report)
+    five_yun_result = generate_five_yun_section(bazi_result, full_report)
     
     # 第四步：构建增强型报告
     if five_yun_result['success']:

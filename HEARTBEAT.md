@@ -2,7 +2,8 @@
 
 ## 每日定时任务
 - **每日 8:00** 给沛柔推送当日运势
-  - 数据源：抓取 188188.org 获取准确干支
+  - 干支：用 `scripts/get_ganzhi.py` 本地算法（已校准，不依赖外部）
+  - 老黄历宜忌：laohuangli.bmcx.com 或 smxs.com 获取
   - 模板：使用 `templates/daily_fortune.md` 格式
   - **不需要展开原局八字的详细内容**，直接展开后面的分析
   - 必须包含以下模块：
