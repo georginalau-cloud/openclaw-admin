@@ -58,7 +58,7 @@ def main():
     # 如果有经度信息，计算真太阳时
     if longitude is not None:
         adjusted_hour, adjusted_minute = calculate_solar_time(
-            args.hour, args.minute, args.second, longitude
+            args.hour, args.minute, args.second, longitude, args.month, args.day
         )
         solar_time_applied = True
     
@@ -70,14 +70,14 @@ def main():
     cmd = [
         'python3',
         bazi_script,
+        '-g',  # 公历（必须放在positional args前面）
         str(args.year),
         str(args.month),
         str(args.day),
         str(adjusted_hour),
-        '-g',  # 公历
     ]
     
-    if args.gender == 'female':
+    if args.gender.lower() in ('female', 'f', '女'):
         cmd.append('-n')  # 女命
     
     try:

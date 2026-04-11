@@ -26,6 +26,9 @@ CITIES = {
     
     # 西安地区
     '西安': 108.95,
+    '西安碑林': 108.9533,
+    '碑林区': 108.9533,
+    '碑林': 108.9533,
     
     # 南京地区
     '南京': 118.8,
@@ -79,7 +82,32 @@ def get_longitude(city_name):
     
     return None
 
-def calculate_solar_time(hour, minute, second, longitude, timezone_offset=8):
+def calculate_equation_of_time(month, day):
+    """
+    计算均时差（Equation of Time），单位：分钟
+    地球椭圆轨道和轴倾角造成的真太阳时与平太阳时之差。
+    
+    参数:
+        month: 月(1-12)
+        day: 日(1-31)
+    
+    返回:
+        均时差（分钟），正数表示真太阳时快于平太阳时，负数表示慢于平太阳时
+    """
+    import math
+    # 计算日期在一年中的序号（简化，不考虑闰年）
+    days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    n = sum(days_in_month[:month]) + day  # 一年中的第n天
+    
+    # B = 2π × (n - 81) / 365
+    B = 2 * math.pi * (n - 81) / 365
+    
+    # 均时差公式（分钟）
+    EoT = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
+    return EoT
+
+
+def calculate_solar_time(hour, minute, second, longitude, month, day, timezone_offset=8):
     """
     计算真太阳时
     
@@ -88,29 +116,28 @@ def calculate_solar_time(hour, minute, second, longitude, timezone_offset=8):
         minute: 分(0-59)
         second: 秒(0-59)
         longitude: 经度(度)
+        month: 月(1-12)
+        day: 日(1-31)
         timezone_offset: 时区偏差 (默认中国 UTC+8)
     
     返回:
         (修正后的小时, 修正后的分钟)
     
     公式:
-        真太阳时 = 本地时 + (120° - 经度) × 4分钟/度
-        
-    说明:
-        - 中国统一使用 UTC+8 (东八区，标准经线120°)
-        - 如果经度 < 120°，需要加时间（地区在标准线西边）
-        - 如果经度 > 120°，需要减时间（地区在标准线东边）
+        真太阳时 = 北京时间 - (120° - 经度) × 4分钟/度 + 均时差(Equation of Time)
     """
     # 转换为总分钟数
     total_minutes = hour * 60 + minute
     
-    # 计算时差 (分钟)
-    # 标准线是 120°，每1°差4分钟
-    # 注意：这里直接计算分钟，不要除以60再乘以60
+    # 经度时差 (分钟)
+    # 中国统一使用 UTC+8，标准经线120°
     time_diff_minutes = (120 - longitude) * 4
     
-    # 应用修正
-    adjusted_minutes = total_minutes + time_diff_minutes
+    # 均时差修正（一月初约-6到-7分钟）
+    eot = calculate_equation_of_time(month, day)
+    
+    # 应用修正：经度修正 + 均时差修正
+    adjusted_minutes = total_minutes - time_diff_minutes + eot
     
     # 处理跨天情况
     if adjusted_minutes < 0:

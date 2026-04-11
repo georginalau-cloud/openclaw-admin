@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+八字分析 skill 的可执行入口
+"""
+import sys
+import json
+import subprocess
+import os
+import re
+import shutil
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BAZI_SCRIPT = os.path.join(SCRIPT_DIR, '..', 'bazi_with_five_yun.py')
+
+# Strip ANSI escape sequences for cleaner output
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+def strip_ansi(text):
+    return ANSI_RE.sub('', text)
+
+def main():
+    # 解析参数：year, month, day, hour, gender, city
+    args = sys.argv[1:]
+    
+    cmd = ['python3', BAZI_SCRIPT]
+    
+    i = 0
+    while i < len(args):
+        if args[i] in ('--year', '--month', '--day', '--hour', '--minute', '--second'):
+            cmd.extend([args[i], args[i+1]])
+            i += 2
+        elif args[i] == '--gender':
+            cmd.extend([args[i], args[i+1]])
+            i += 2
+        elif args[i] == '--city':
+            cmd.extend([args[i], args[i+1]])
+            i += 2
+        elif args[i] == '--level':
+            cmd.extend([args[i], args[i+1]])
+            i += 2
+        else:
+            i += 1
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            # Strip ANSI color codes before printing so model sees clean text
+            clean = strip_ansi(result.stdout)
+            print(clean)
+        else:
+            print(json.dumps({'success': False, 'error': result.stderr}), file=sys.stderr)
+            sys.exit(1)
+    except subprocess.TimeoutExpired:
+        print(json.dumps({'success': False, 'error': '脚本执行超时（120秒）'}), file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(json.dumps({'success': False, 'error': str(e)}), file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
