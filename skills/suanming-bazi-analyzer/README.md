@@ -51,4 +51,32 @@ echo "✅ README.md 已创建" cat ~/.openclaw/workspace-suanming/skills/suanmin
 
 echo "✅ README.md 已创建" cat ~/.openclaw/workspace-suanming/skills/suanming-bazi-analyzer/README.md
 
+### 调用链
+bin/bazi（入口）
+  └── src/bazi_chart.py（排盘整合）
+        ├── src/cities_longitude.py（真太阳时）
+        ├── src/yuanju.py（原局四柱）
+        │     ├── src/jieqi.py（节气计算）
+        │     └── lib/ganzhi_calculator.py（干支计算）
+        └── src/dayun.py（大运展开）
+              └── src/jieqi.py（节气计算）
 
+  └── src/bazi_chart_year.py（流年盘）
+  └── src/bazi_chart_month.py（流月盘）
+  └── src/bazi_chart_day.py（流日盘）
+
+  └── lib/ten_gods_analyzer.py（十神分析）
+  └── lib/format_analyzer.py（格局用神）
+        └── lib/yongshen_analyzer.py（用神引擎）
+              └── lib/ganzhi_calculator.py
+  └── lib/character_profiler.py（性格画像）
+  └── lib/six_relations_analyzer.py（六亲关系）
+  └── lib/wealth_career_analyzer.py（财富事业）
+  └── lib/health_predictor.py（健康预警）
+  └── lib/luck_cycle_analyzer.py（大运流年）
+        └── lib/zhi_relations.py（地支关系引擎）
+  └── lib/advice_generator.py（趋吉避凶）
+  └── lib/wuyu_analyzer.py（妻财子禄寿）
+        └── lib/zhi_relations.py
+  └── lib/ancient_books_fetcher.py（古籍查询）
+  └── lib/daily_fortune.py（日运黄历）
