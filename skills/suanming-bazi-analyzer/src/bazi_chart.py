@@ -129,17 +129,29 @@ def build_bazi_chart(
     if city:
         longitude = get_longitude(city)
         if longitude is not None:
-            result = calculate_solar_time(year, month, day, hour, minute, 0, longitude)
-            if result.get('status') == 'success':
-                corrected_hour   = result['corrected_hour']
-                corrected_minute = result['corrected_minute']
+            try:
+                corrected_hour, corrected_minute = calculate_solar_time(
+                    hour=hour,
+                    minute=minute,
+                    second=0,
+                    longitude=longitude,
+                    month=month,
+                    day=day,
+                )
+                offset_min = (corrected_hour * 60 + corrected_minute) - (hour * 60 + minute)
                 solar_correction = {
                     'city':       city,
                     'longitude':  longitude,
                     'original':   f'{hour:02d}:{minute:02d}',
                     'corrected':  f'{corrected_hour:02d}:{corrected_minute:02d}',
-                    'offset_min': result['total_offset_minutes'],
+                    'offset_min': offset_min,
                     'applied':    True,
+                }
+            except Exception as e:
+                solar_correction = {
+                    'city':    city,
+                    'applied': False,
+                    'reason':  f'真太阳时计算失败：{e}，使用原始时间',
                 }
         else:
             solar_correction = {
