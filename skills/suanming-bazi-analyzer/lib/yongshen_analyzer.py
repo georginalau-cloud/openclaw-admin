@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-lib/yongshen_analyzer.py - 用神取用引擎（三法合一）
+[12] lib/yongshen_analyzer.py - 用神取用引擎（三法合一）
+调用层级：被 lib/format_analyzer.py [13] 调用
+依赖：lib/ganzhi_calculator.py [03]
 
 取用优先级：
   1. 调候用神（穷通宝鉴，日干×月支，解决寒暖燥湿）

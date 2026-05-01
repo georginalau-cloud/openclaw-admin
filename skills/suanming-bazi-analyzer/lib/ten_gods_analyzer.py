@@ -1,5 +1,7 @@
 """
-ten_gods_analyzer.py - 十神分析模块
+[11] lib/ten_gods_analyzer.py - 十神分析模块
+调用层级：被 bin/bazi 调用（分析层第一步）
+依赖：lib/ganzhi_calculator.py [03]
 
 根据日主（日干）与其他干支的五行生克关系，计算十神，
 并分析对应的性格特征。

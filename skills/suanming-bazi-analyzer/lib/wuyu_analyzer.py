@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-lib/wuyu_analyzer.py - 妻财子禄寿五运分析引擎
+[20] lib/wuyu_analyzer.py - 妻财子禄寿五运分析引擎
+调用层级：被 bin/bazi 调用
+依赖：lib/ten_gods_analyzer.py [11]、lib/zhi_relations.py [10]
 
 五运维度：
   妻（感情/婚姻）  财（财运/事业）  子（子女/后代）

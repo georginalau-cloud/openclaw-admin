@@ -1,5 +1,7 @@
 """
-ancient_books_fetcher.py - 古籍查询模块
+[21] lib/ancient_books_fetcher.py - 古籍查询模块
+调用层级：被 bin/bazi 调用
+依赖：data/classic-texts.json（本地备选）
 
 优先从 ctext.org API 查询经典著作原文，
 失败时降级使用本地 classic-texts.json。

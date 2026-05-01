@@ -1,5 +1,7 @@
 """
-luck_cycle_analyzer.py - 大运流年分析模块
+[18] lib/luck_cycle_analyzer.py - 大运流年分析模块
+调用层级：被 bin/bazi 调用
+依赖：lib/ganzhi_calculator.py [03]、lib/zhi_relations.py [10]、data/classic-wisdom.json
 
 职责：对 bazi_chart 输出的大运/流年数据做深度分析，
       输出吉凶评估、各方面预测文字。

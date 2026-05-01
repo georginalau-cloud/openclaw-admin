@@ -1,5 +1,8 @@
 """
-format_analyzer.py - 格局判断 + 用神取用（三法合一）
+[13] lib/format_analyzer.py - 格局判断 + 用神取用（三法合一）
+调用层级：被 bin/bazi 调用（分析层第二步）
+依赖：lib/ganzhi_calculator.py [03]、lib/yongshen_analyzer.py [12]
+数据：data/format-definitions.json、data/classic-wisdom.json
 
 格局判断：《子平真诠》月令藏干透出法
 用神取用：调候（穷通宝鉴）> 病药 > 通关，从格单独处理

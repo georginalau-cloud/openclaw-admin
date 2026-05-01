@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-src/bazi_chart.py - 标准盘整合输出
+[06] src/bazi_chart.py - 标准盘整合输出
+调用层级：被 bin/bazi 调用，是排盘层的最终出口
+依赖：src/cities_longitude.py [01]、src/yuanju.py [04]、src/dayun.py [05]
 
 职责：
   接收 yuanju + dayun 的输出，整合成一份完整的标准盘 JSON。

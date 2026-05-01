@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-src/dayun.py - 大运/流年/流月展开模块
+[05] src/dayun.py - 大运/流年/流月展开模块
+调用层级：被 src/bazi_chart.py 调用
+依赖：src/jieqi.py [02]
 
 职责：
 - 计算起运时间（精确到天，基于节气精确时刻）

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-lib/zhi_relations.py - 地支关系分析引擎
+[10] lib/zhi_relations.py - 地支关系分析引擎
+调用层级：被 lib/luck_cycle_analyzer.py、lib/wuyu_analyzer.py、bin/bazi 调用
+依赖：lib/ganzhi_calculator.py [03]
 
 统一处理地支之间的所有关系，按力量从强到弱：
   三会局 > 三合局 > 六合 > 半三合 > 六冲 > 三刑 > 六害 > 相破

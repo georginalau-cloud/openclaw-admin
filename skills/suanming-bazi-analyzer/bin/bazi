@@ -1,7 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-bin/bazi - 八字精批分析主入口
+[00] bin/bazi - 八字精批分析主入口（顶层调用入口）
+调用链：
+  [00] bin/bazi
+    → [06] src/bazi_chart.py
+        → [01] src/cities_longitude.py
+        → [04] src/yuanju.py → [02] src/jieqi.py, [03] lib/ganzhi_calculator.py
+        → [05] src/dayun.py → [02] src/jieqi.py
+    → [07] src/bazi_chart_year.py
+    → [08] src/bazi_chart_month.py
+    → [09] src/bazi_chart_day.py
+    → [11] lib/ten_gods_analyzer.py
+    → [13] lib/format_analyzer.py → [12] lib/yongshen_analyzer.py
+    → [14] lib/character_profiler.py
+    → [15] lib/six_relations_analyzer.py
+    → [16] lib/wealth_career_analyzer.py
+    → [17] lib/health_predictor.py
+    → [18] lib/luck_cycle_analyzer.py → [10] lib/zhi_relations.py
+    → [19] lib/advice_generator.py
+    → [20] lib/wuyu_analyzer.py → [10] lib/zhi_relations.py
+    → [21] lib/ancient_books_fetcher.py
+    → [22] lib/daily_fortune.py
 
 调用方式（OpenClaw exec 工具）：
   # 完整精批
@@ -231,6 +251,252 @@ def _build_report_text(chart: dict, analysis: dict) -> str:
     if wuyu:
         lines.append('【第八模块：妻财子禄寿五运分析】')
         lines.append(wuyu.get('text', ''))
+        lines.append('')
+
+    lines.append('=' * 60)
+    lines.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    return '\n'.join(lines)
+
+
+def _build_monthly_report_text(base_chart: dict, month_chart: dict, wuyu: dict) -> str:
+    """将月运分析结果组装成可读的文本（类full_report）。"""
+    from lib.ganzhi_calculator import STEM_ELEMENTS, BRANCH_ELEMENTS, HIDDEN_STEMS
+    from lib.ten_gods_analyzer import analyze_ten_gods
+    from lib.ganzhi_calculator import get_element_counts
+
+    lines = []
+    base_meta = base_chart.get('meta', {})
+    gz       = base_chart.get('ganzhi', {})
+    current  = base_chart.get('current', {})
+    dayun_gz  = month_chart.get('dayun', {}).get('ganzhi', '') or current.get('dayun', {}).get('ganzhi', '')
+    liuyear_gz = month_chart.get('liuyear', {}).get('ganzhi', '') or current.get('liuyear', {}).get('ganzhi', '')
+    liuyue   = month_chart.get('liuyue', {})
+    liuyue_gz = liuyue.get('ganzhi', '')
+    liuri    = month_chart.get('liuri', {})
+
+    # 用神信息
+    yong_info = base_chart.get('yong_shen', {})
+    yong_shen = yong_info.get('yong_shen', '火') if yong_info else '火'
+    ji_shen   = yong_info.get('ji_shen', ['土']) if yong_info else ['土']
+
+    # 标题
+    lines.append('=' * 60)
+    lines.append('【月运分析报告】')
+    lines.append('=' * 60)
+
+    # 基本信息
+    solar_date = base_meta.get('solar_date', '')
+    gender_cn  = '女' if base_meta.get('gender', '').lower() in ('female', 'f', '女') else '男'
+    lines.append(f"公历：{solar_date}（{gender_cn}命）")
+    lines.append(f"出生地：{base_meta.get('city', '未知')}")
+    lines.append('')
+
+    # 层级信息
+    lines.append('【当前层级】')
+    layer_desc = month_chart.get('context', {}).get('layer_desc', '')
+    lines.append(f"  {layer_desc}")
+    lines.append('')
+
+    # 流月干支信息
+    lines.append('【本月干支信息】')
+    gan = liuyue.get('gan', '')
+    zhi = liuyue.get('zhi', '')
+    gan_shishen = liuyue.get('gan_shishen', '')
+    zhi_shishen = liuyue.get('zhi_shishen', '')
+    cangygan    = liuyue.get('cangygan', [])
+    cangygan_ss = liuyue.get('cangygan_shishen', [])
+    xun_kong    = liuyue.get('xun_kong', '') or '无'
+
+    lines.append(f"  流月干支：{liuyue_gz}")
+    lines.append(f"  天干：{gan}（{gan_shishen}）")
+    lines.append(f"  地支：{zhi}（{zhi_shishen}）")
+
+    if cangygan:
+        cang_str = '、'.join([
+            f"{c}（{s.get('shishen', '')}）"
+            for c, s in zip(cangygan, cangygan_ss)
+        ])
+        lines.append(f"  藏干：{cang_str}")
+
+    lines.append(f"  空亡：{xun_kong}")
+    lines.append('')
+
+    # 刑冲合
+    interactions = month_chart.get('interactions', {})
+    lines.append('【本月刑冲合】')
+    zhi_rels = interactions.get('zhi', [])
+    if zhi_rels:
+        for r in zhi_rels:
+            lines.append(f"  • {r.get('desc', '')}（{r.get('source','')}）：{r.get('effect','')}")
+    else:
+        lines.append('  本月与命局无明显刑冲合')
+
+    gan_rels = interactions.get('gan', [])
+    if gan_rels:
+        lines.append('  【天干互动】')
+        for r in gan_rels:
+            lines.append(f"  • {r.get('desc', '')}：{r.get('effect','')}")
+    lines.append('')
+
+    # 五运分析
+    if wuyu and wuyu.get('merged'):
+        lines.append('【妻财子禄寿本月运势】')
+        merged = wuyu.get('merged', {})
+        dim_map = {
+            'qi':   ('妻', '感情'),
+            'cai':  ('财', '事业'),
+            'zi':   ('子', '子女'),
+            'lu':   ('禄', '官禄'),
+            'shou': ('寿', '健康'),
+        }
+        rating_map = {'大吉': '★', '吉': '●', '平': '○', '需防': '▲', '凶': '✕'}
+        for dim_key, (dim_cn, dim_en) in dim_map.items():
+            data = merged.get(dim_key, {})
+            rating = data.get('rating', '平')
+            symbol = rating_map.get(rating, '○')
+            lines.append(f"  {symbol} {dim_cn}（{dim_en}）【{rating}】")
+            notes = data.get('notes', [])
+            for n in notes[:4]:
+                clean = n.replace('[原局] ', '').replace('[大运] ', '').replace('[流年] ', '').replace('[流月] ', '')
+                lines.append(f"    · {clean}")
+        lines.append('')
+
+    # 流月月序列表
+    liuyear_data = month_chart.get('liuyear', {})
+    liu_nian = liuyear_data.get('liu_nian', [])
+    if liu_nian:
+        liu_nian_sorted = sorted(liu_nian, key=lambda x: x.get('year', 0))
+        lines.append('【流月月序（流年内）】')
+        for ln in liu_nian_sorted:
+            year = ln.get('year', '')
+            gz_ly = ln.get('ganzhi', '')
+            gan_ss = ln.get('gan_shishen', '')
+            zhi_ss = ln.get('zhi_shishen', '')
+            is_current = ln.get('is_current', False)
+            current_mark = ' ← 当前' if is_current else ''
+            lines.append(f"  {year}年 {gz_ly}（天干：{gan_ss} / 地支：{zhi_ss}）{current_mark}")
+        lines.append('')
+
+    lines.append('=' * 60)
+    lines.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    return '\n'.join(lines)
+
+
+def _build_daily_report_text(base_chart: dict, day_chart: dict, wuyu: dict) -> str:
+    """将日运分析结果组装成可读的文本（类full_report）。"""
+    lines = []
+    base_meta = base_chart.get('meta', {})
+    current  = base_chart.get('current', {})
+    dayun_gz   = day_chart.get('dayun', {}).get('ganzhi', '') or current.get('dayun', {}).get('ganzhi', '')
+    liuyear_gz = day_chart.get('liuyear', {}).get('ganzhi', '') or current.get('liuyear', {}).get('ganzhi', '')
+    liuyue_gz  = day_chart.get('liuyue', {}).get('ganzhi', '')
+    liuri      = day_chart.get('liuri', {})
+    liuri_gz   = liuri.get('ganzhi', '')
+    lunar_date = liuri.get('lunar_date', '')
+    huangli    = liuri.get('huangli', {})
+    positions  = liuri.get('positions', {})
+
+    # 用神
+    yong_info = base_chart.get('yong_shen', {})
+    yong_shen = yong_info.get('yong_shen', '火') if yong_info else '火'
+
+    # 标题
+    lines.append('=' * 60)
+    lines.append('【日运分析报告】')
+    lines.append('=' * 60)
+
+    # 日期
+    liuri_date = liuri.get('date', '')
+    gender_cn  = '女' if base_meta.get('gender', '').lower() in ('female', 'f', '女') else '男'
+    lines.append(f"公历：{liuri_date}（{gender_cn}命）")
+    lines.append(f"农历：{lunar_date}")
+    lines.append('')
+
+    # 层级
+    lines.append('【当前层级】')
+    layer_desc = day_chart.get('context', {}).get('layer_desc', '')
+    lines.append(f"  {layer_desc}")
+    lines.append('')
+
+    # 今日干支信息
+    lines.append('【今日干支信息】')
+    gan     = liuri.get('gan', '')
+    zhi     = liuri.get('zhi', '')
+    gan_ss  = liuri.get('gan_shishen', '')
+    zhi_ss  = liuri.get('zhi_shishen', '')
+    cangygan = liuri.get('cangygan', [])
+    cangygan_ss = liuri.get('cangygan_shishen', [])
+    zhi_xing = huangli.get('zhi_xing', '')
+    nayin    = huangli.get('nayin', '')
+    chong    = huangli.get('chong', '')
+    sha_dir  = huangli.get('sha', '')
+
+    lines.append(f"  今日干支：{liuri_gz}")
+    lines.append(f"  天干：{gan}（{gan_ss}）")
+    lines.append(f"  地支：{zhi}（{zhi_ss}）")
+    if cangygan:
+        cang_str = '、'.join([f"{c}（{s.get('shishen', '')}）" for c, s in zip(cangygan, cangygan_ss)])
+        lines.append(f"  藏干：{cang_str}")
+    lines.append(f"  建除：{zhi_xing}日  纳音：{nayin}")
+    lines.append(f"  冲：{chong}  煞方：{sha_dir}方")
+    lines.append('')
+
+    # 黄历宜忌
+    yi_list = huangli.get('yi', [])
+    ji_list = huangli.get('ji', [])
+    lines.append('【黄历宜忌】')
+    lines.append(f"  宜：{'、'.join(yi_list[:6])}")
+    lines.append(f"  忌：{'、'.join(ji_list[:5])}")
+    lines.append('')
+
+    # 方位
+    lines.append('【方位与幸运】')
+    lines.append(f"  喜神方位：{positions.get('xi', '')}")
+    lines.append(f"  财神方位：{positions.get('cai', '')}")
+    lines.append(f"  福神方位：{positions.get('fu', '')}")
+    lines.append('')
+
+    # 刑冲合
+    interactions = day_chart.get('interactions', {})
+    lines.append('【今日刑冲合】')
+    zhi_rels = interactions.get('zhi', [])
+    if zhi_rels:
+        for r in zhi_rels:
+            source_val = r.get('source', '') or '命局'
+            lines.append(f"  • {r.get('desc', '')}（{source_val}）：{r.get('effect','')}")
+    else:
+        lines.append('  今日与命局无明显刑冲合，运势平稳')
+
+    gan_rels = interactions.get('gan', [])
+    if gan_rels:
+        lines.append('  【天干互动】')
+        for r in gan_rels:
+            lines.append(f"  • {r.get('desc', '')}：{r.get('effect','')}")
+    lines.append('')
+
+    # 五运（妻财子禄寿）
+    if wuyu and wuyu.get('merged'):
+        lines.append('【妻财子禄寿今日运势】')
+        merged = wuyu.get('merged', {})
+        dim_map = {
+            'qi':   ('妻', '感情'),
+            'cai':  ('财', '事业'),
+            'zi':   ('子', '子女'),
+            'lu':   ('禄', '官禄'),
+            'shou': ('寿', '健康'),
+        }
+        rating_map = {'大吉': '★', '吉': '●', '平': '○', '需防': '▲', '凶': '✕'}
+        for dim_key, (dim_cn, dim_en) in dim_map.items():
+            data = merged.get(dim_key, {})
+            rating = data.get('rating', '平')
+            symbol = rating_map.get(rating, '○')
+            lines.append(f"  {symbol} {dim_cn}（{dim_en}）【{rating}】")
+            notes = data.get('notes', [])
+            for n in notes[:3]:
+                clean = n.replace('[原局] ', '').replace('[大运] ', '').replace('[流年] ', '').replace('[流月] ', '').replace('[流日] ', '')
+                lines.append(f"    · {clean}")
         lines.append('')
 
     lines.append('=' * 60)
@@ -1061,6 +1327,7 @@ def main():
         try:
             pillars_adapted = _adapt_pillars(base_chart)
             ten_gods = analyze_ten_gods(pillars_adapted)
+            from lib.format_analyzer import format_full_analysis
             fmt      = format_full_analysis(pillars_adapted, ten_gods)
             base_chart['yong_shen'] = fmt.get('yong_shen', {})
         except Exception:
@@ -1090,8 +1357,15 @@ def main():
         except Exception as e:
             prompt_for_llm = {'error': str(e)}
 
+        # ── 5. 生成月运 full_report（类精批格式）────────────────────
+        try:
+            full_report = _build_monthly_report_text(base_chart, month_chart, wuyu)
+        except Exception as e:
+            full_report = f'月运报告生成失败: {str(e)}'
+
         month_chart['wuyu']          = wuyu
         month_chart['prompt_for_llm'] = prompt_for_llm
+        month_chart['full_report'] = full_report
         print(json.dumps(month_chart, ensure_ascii=False, indent=2))
         return
 
@@ -1130,6 +1404,7 @@ def main():
         try:
             pillars_adapted = _adapt_pillars(base_chart)
             ten_gods = analyze_ten_gods(pillars_adapted)
+            from lib.format_analyzer import format_full_analysis
             fmt      = format_full_analysis(pillars_adapted, ten_gods)
             base_chart['yong_shen'] = fmt.get('yong_shen', {})
         except Exception:
@@ -1160,8 +1435,15 @@ def main():
         except Exception as e:
             prompt_for_llm = {'error': str(e)}
 
+        # ── 5. 生成日运 full_report ─────────────────────────────────
+        try:
+            full_report = _build_daily_report_text(base_chart, day_chart, wuyu)
+        except Exception as e:
+            full_report = f'日运报告生成失败: {str(e)}'
+
         day_chart['wuyu']           = wuyu
         day_chart['prompt_for_llm'] = prompt_for_llm
+        day_chart['full_report']    = full_report
         print(json.dumps(day_chart, ensure_ascii=False, indent=2))
         return
 

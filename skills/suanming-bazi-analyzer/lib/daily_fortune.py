@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-lib/daily_fortune.py - 日运分析模块
+[22] lib/daily_fortune.py - 日运分析模块
+调用层级：被 bin/bazi（daily 模式）调用
+依赖：vendor/lunar_python
 
 功能：
   1. 计算当日干支（年/月/日/时）

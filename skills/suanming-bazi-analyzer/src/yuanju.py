@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-src/yuanju.py - 原局排盘模块
+[04] src/yuanju.py - 原局排盘模块
+调用层级：被 src/bazi_chart.py 调用
+依赖：src/jieqi.py [02]、lib/ganzhi_calculator.py [03]
 
 职责：
 - 接收真太阳时校准后的出生信息

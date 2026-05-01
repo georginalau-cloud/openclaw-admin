@@ -1,5 +1,7 @@
 """
-health_predictor.py - 健康预警模块
+[17] lib/health_predictor.py - 健康预警模块
+调用层级：被 bin/bazi 调用
+依赖：lib/ganzhi_calculator.py [03]、data/classic-wisdom.json
 
 根据五行偏枯（过旺或过弱）预测对应脏腑健康风险，
 识别需要特别注意的年份。

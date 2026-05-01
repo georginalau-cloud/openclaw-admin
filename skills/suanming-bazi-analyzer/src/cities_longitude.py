@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-中国主要城市经度数据表
-格式: {城市名: 经度(度)}
+[01] src/cities_longitude.py - 城市经度 + 真太阳时校准
+调用层级：被 src/bazi_chart.py 调用
+依赖：无
 """
 
 CITIES = {

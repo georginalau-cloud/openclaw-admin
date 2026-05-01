@@ -1,5 +1,7 @@
 """
-ganzhi_calculator.py - 干支四柱计算模块
+[03] lib/ganzhi_calculator.py - 干支四柱计算模块
+调用层级：被 src/yuanju.py、lib/format_analyzer.py、lib/yongshen_analyzer.py 等调用
+依赖：无（纯计算，无外部依赖）
 
 实现万年历算法，根据公历生日计算年月日时四柱干支。
 支持 1900-2100 年范围。

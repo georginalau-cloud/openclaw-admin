@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-src/bazi_chart_month.py - 标准盘 + 流年 + 流月叠加
+[08] src/bazi_chart_month.py - 标准盘 + 流年 + 流月叠加
+调用层级：被 bin/bazi 调用（monthly/daily 模式）
+依赖：src/bazi_chart_year.py [07]
 
 职责：
   接收 bazi_chart_year 的输出（流年盘），叠加指定流月干支，

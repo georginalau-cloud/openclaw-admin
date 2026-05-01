@@ -1,5 +1,7 @@
 """
-character_profiler.py - 性格深度画像模块
+[14] lib/character_profiler.py - 性格深度画像模块
+调用层级：被 bin/bazi 调用
+依赖：lib/ten_gods_analyzer.py [11]、data/ten-gods-traits.json
 
 通过日主特征、十神组合、格局分析，
 生成显性性格、隐性性格、优缺点的深度画像。

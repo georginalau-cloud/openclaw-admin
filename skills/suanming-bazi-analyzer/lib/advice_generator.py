@@ -1,5 +1,7 @@
 """
-advice_generator.py - 趋吉避凶建议模块
+[19] lib/advice_generator.py - 趋吉避凶建议模块
+调用层级：被 bin/bazi 调用
+依赖：data/feng-shui-data.json
 
 根据用神忌神和命局特点，
 生成开运色、吉祥数字、最佳方位、合作建议等。

@@ -1,5 +1,7 @@
 """
-six_relations_analyzer.py - 六亲关系分析模块
+[15] lib/six_relations_analyzer.py - 六亲关系分析模块
+调用层级：被 bin/bazi 调用
+依赖：lib/ganzhi_calculator.py [03]、data/classic-wisdom.json
 
 通过命局中父母星、财星、官星、子女星等位置，
 分析父母缘、婚姻感情、子女情况。

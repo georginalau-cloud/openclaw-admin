@@ -1,5 +1,7 @@
 """
-wealth_career_analyzer.py - 财富事业分析模块
+[16] lib/wealth_career_analyzer.py - 财富事业分析模块
+调用层级：被 bin/bazi 调用
+依赖：lib/ganzhi_calculator.py [03]、data/industries-mapping.json
 
 分析命局的财富等级、求财方式、适合行业和事业高低点。
 """
