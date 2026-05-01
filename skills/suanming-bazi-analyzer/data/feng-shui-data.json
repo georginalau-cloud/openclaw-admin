@@ -1,0 +1,314 @@
+{
+  "开运色": {
+    "木": {
+      "lucky_colors": ["绿色", "青色", "碧色"],
+      "color_usage": "适合穿绿色系服装、装饰绿植、使用绿色文具",
+      "avoid_colors": ["白色", "银色"]
+    },
+    "火": {
+      "lucky_colors": ["红色", "橙色", "紫色"],
+      "color_usage": "适合穿红色系服装，家居添加暖色调",
+      "avoid_colors": ["黑色", "深蓝色"]
+    },
+    "土": {
+      "lucky_colors": ["黄色", "棕色", "米色"],
+      "color_usage": "适合穿大地色系，家居以暖黄色为主调",
+      "avoid_colors": ["绿色", "青色"]
+    },
+    "金": {
+      "lucky_colors": ["白色", "金色", "银色"],
+      "color_usage": "适合佩戴金银饰品，服装以白色或金属色为主",
+      "avoid_colors": ["红色", "橙色"]
+    },
+    "水": {
+      "lucky_colors": ["黑色", "深蓝色", "藏青色"],
+      "color_usage": "适合穿深色系服装，家居可添加蓝黑色调装饰",
+      "avoid_colors": ["黄色", "棕色"]
+    }
+  },
+  "吉祥数字": {
+    "木": {
+      "lucky_numbers": [3, 4, 8],
+      "number_tips": "3、4属木，8属金（生火暖木），均为吉利"
+    },
+    "火": {
+      "lucky_numbers": [2, 7, 3],
+      "number_tips": "2、7属火，3属木（木生火），均为吉利"
+    },
+    "土": {
+      "lucky_numbers": [5, 0, 2],
+      "number_tips": "5、0属土，2属火（火生土），均为吉利"
+    },
+    "金": {
+      "lucky_numbers": [4, 9, 5],
+      "number_tips": "4、9属金，5属土（土生金），均为吉利"
+    },
+    "水": {
+      "lucky_numbers": [1, 6, 4],
+      "number_tips": "1、6属水，4属金（金生水），均为吉利"
+    }
+  },
+  "居住方位": {
+    "木": {
+      "best_direction": "东方",
+      "secondary": "东南方",
+      "avoid": "西方（金克木）",
+      "home_tips": "卧室或书房宜设在房子东侧，多摆绿植"
+    },
+    "火": {
+      "best_direction": "南方",
+      "secondary": "东方（木生火）",
+      "avoid": "北方（水克火）",
+      "home_tips": "宜居南向房间，充分采光，家中可添置暖色灯具"
+    },
+    "土": {
+      "best_direction": "中央或西南",
+      "secondary": "东北方",
+      "avoid": "东方（木克土）",
+      "home_tips": "客厅宜宽敞稳重，装饰以大地色系为主"
+    },
+    "金": {
+      "best_direction": "西方",
+      "secondary": "西北方",
+      "avoid": "南方（火克金）",
+      "home_tips": "宜居西向房间，可添加金属装饰，保持整洁简约"
+    },
+    "水": {
+      "best_direction": "北方",
+      "secondary": "西方（金生水）",
+      "avoid": "中央（土克水）",
+      "home_tips": "北向房间最佳，可摆放鱼缸或水景，保持流动感"
+    }
+  },
+  "合作伙伴建议": {
+    "子（鼠）": {
+      "zodiac": "鼠",
+      "element": "水",
+      "compatible_with": ["龙", "猴"],
+      "avoid_with": ["马", "兔"]
+    },
+    "丑（牛）": {
+      "zodiac": "牛",
+      "element": "土",
+      "compatible_with": ["蛇", "鸡"],
+      "avoid_with": ["羊", "马"]
+    },
+    "寅（虎）": {
+      "zodiac": "虎",
+      "element": "木",
+      "compatible_with": ["马", "狗"],
+      "avoid_with": ["猴", "蛇"]
+    },
+    "卯（兔）": {
+      "zodiac": "兔",
+      "element": "木",
+      "compatible_with": ["羊", "猪"],
+      "avoid_with": ["鸡", "鼠"]
+    },
+    "辰（龙）": {
+      "zodiac": "龙",
+      "element": "土",
+      "compatible_with": ["鼠", "猴"],
+      "avoid_with": ["狗", "兔"]
+    },
+    "巳（蛇）": {
+      "zodiac": "蛇",
+      "element": "火",
+      "compatible_with": ["牛", "鸡"],
+      "avoid_with": ["猪", "虎"]
+    },
+    "午（马）": {
+      "zodiac": "马",
+      "element": "火",
+      "compatible_with": ["虎", "狗"],
+      "avoid_with": ["鼠", "牛"]
+    },
+    "未（羊）": {
+      "zodiac": "羊",
+      "element": "土",
+      "compatible_with": ["兔", "猪"],
+      "avoid_with": ["牛", "狗"]
+    },
+    "申（猴）": {
+      "zodiac": "猴",
+      "element": "金",
+      "compatible_with": ["鼠", "龙"],
+      "avoid_with": ["虎", "猪"]
+    },
+    "酉（鸡）": {
+      "zodiac": "鸡",
+      "element": "金",
+      "compatible_with": ["牛", "蛇"],
+      "avoid_with": ["兔", "狗"]
+    },
+    "戌（狗）": {
+      "zodiac": "狗",
+      "element": "土",
+      "compatible_with": ["虎", "马"],
+      "avoid_with": ["龙", "兔"]
+    },
+    "亥（猪）": {
+      "zodiac": "猪",
+      "element": "水",
+      "compatible_with": ["兔", "羊"],
+      "avoid_with": ["蛇", "猴"]
+    }
+  },
+  "description": "开运方位、颜色、数字、合作伙伴属相数据",
+  "source": "《渊海子平》《穷通宝鉴》风水方位理论",
+  "lucky_colors_by_element": {
+    "木": {
+      "primary": ["绿色", "青色", "翠绿"],
+      "secondary": ["蓝色", "黑色"],
+      "avoid": ["白色", "金色", "银色"],
+      "reason": "木喜水生，忌金克"
+    },
+    "火": {
+      "primary": ["红色", "紫色", "橙色"],
+      "secondary": ["绿色", "青色"],
+      "avoid": ["黑色", "蓝色"],
+      "reason": "火喜木生，忌水克"
+    },
+    "土": {
+      "primary": ["黄色", "棕色", "橘黄"],
+      "secondary": ["红色", "橙色"],
+      "avoid": ["绿色", "青色"],
+      "reason": "土喜火生，忌木克"
+    },
+    "金": {
+      "primary": ["白色", "金色", "银色"],
+      "secondary": ["黄色", "棕色"],
+      "avoid": ["红色", "橙色"],
+      "reason": "金喜土生，忌火克"
+    },
+    "水": {
+      "primary": ["黑色", "蓝色", "深蓝"],
+      "secondary": ["白色", "银色"],
+      "avoid": ["黄色", "棕色"],
+      "reason": "水喜金生，忌土克"
+    }
+  },
+  "lucky_numbers_by_element": {
+    "木": {
+      "numbers": [3, 4, 8],
+      "reason": "3、4为木数，8为发展数"
+    },
+    "火": {
+      "numbers": [2, 7, 9],
+      "reason": "2、7为火数，9为极阳数"
+    },
+    "土": {
+      "numbers": [0, 5, 10],
+      "reason": "5、0、10为土数，主稳固"
+    },
+    "金": {
+      "numbers": [1, 6, 7],
+      "reason": "1、6为水金数，7为金数"
+    },
+    "水": {
+      "numbers": [1, 6],
+      "reason": "1、6为水数，主流动智慧"
+    }
+  },
+  "lucky_directions_by_element": {
+    "木": {
+      "best": ["东", "东南"],
+      "good": ["北"],
+      "avoid": ["西", "西北"],
+      "home_advice": "床头朝东，书桌面东，有助木气生长"
+    },
+    "火": {
+      "best": ["南", "东南"],
+      "good": ["东"],
+      "avoid": ["北", "西北"],
+      "home_advice": "居室南向采光好，利火势旺盛"
+    },
+    "土": {
+      "best": ["中央", "西南", "东北"],
+      "good": ["南"],
+      "avoid": ["东", "东南"],
+      "home_advice": "选择房屋中央位置或西南方向居住"
+    },
+    "金": {
+      "best": ["西", "西北"],
+      "good": ["西南", "东北"],
+      "avoid": ["南", "东南"],
+      "home_advice": "床头朝西或西北，金气充沛"
+    },
+    "水": {
+      "best": ["北", "西北"],
+      "good": ["西"],
+      "avoid": ["南", "西南"],
+      "home_advice": "北向房间适合水命人，宜安静"
+    }
+  },
+  "compatible_zodiac": {
+    "note": "基于地支六合、三合、半合关系",
+    "combinations": {
+      "子": {
+        "best_match": ["丑", "申", "辰"],
+        "zodiac_names": ["牛", "猴", "龙"],
+        "reason": "子丑六合，申子辰三合水局"
+      },
+      "丑": {
+        "best_match": ["子", "巳", "酉"],
+        "zodiac_names": ["鼠", "蛇", "鸡"],
+        "reason": "子丑六合，巳酉丑三合金局"
+      },
+      "寅": {
+        "best_match": ["亥", "午", "戌"],
+        "zodiac_names": ["猪", "马", "狗"],
+        "reason": "寅亥六合，寅午戌三合火局"
+      },
+      "卯": {
+        "best_match": ["戌", "亥", "未"],
+        "zodiac_names": ["狗", "猪", "羊"],
+        "reason": "卯戌六合，亥卯未三合木局"
+      },
+      "辰": {
+        "best_match": ["酉", "申", "子"],
+        "zodiac_names": ["鸡", "猴", "鼠"],
+        "reason": "辰酉六合，申子辰三合水局"
+      },
+      "巳": {
+        "best_match": ["申", "酉", "丑"],
+        "zodiac_names": ["猴", "鸡", "牛"],
+        "reason": "巳申六合，巳酉丑三合金局"
+      },
+      "午": {
+        "best_match": ["未", "寅", "戌"],
+        "zodiac_names": ["羊", "虎", "狗"],
+        "reason": "午未六合，寅午戌三合火局"
+      },
+      "未": {
+        "best_match": ["午", "亥", "卯"],
+        "zodiac_names": ["马", "猪", "兔"],
+        "reason": "午未六合，亥卯未三合木局"
+      },
+      "申": {
+        "best_match": ["巳", "辰", "子"],
+        "zodiac_names": ["蛇", "龙", "鼠"],
+        "reason": "巳申六合，申子辰三合水局"
+      },
+      "酉": {
+        "best_match": ["辰", "丑", "巳"],
+        "zodiac_names": ["龙", "牛", "蛇"],
+        "reason": "辰酉六合，巳酉丑三合金局"
+      },
+      "戌": {
+        "best_match": ["卯", "寅", "午"],
+        "zodiac_names": ["兔", "虎", "马"],
+        "reason": "卯戌六合，寅午戌三合火局"
+      },
+      "亥": {
+        "best_match": ["寅", "卯", "未"],
+        "zodiac_names": ["虎", "兔", "羊"],
+        "reason": "寅亥六合，亥卯未三合木局"
+      }
+    }
+  },
+  "element_by_yong_shen": {
+    "note": "根据用神五行选择吉祥建议",
+    "template": "用神为{element}时，以上对应该五行的颜色、数字、方位均为有利选择"
+  }
+}

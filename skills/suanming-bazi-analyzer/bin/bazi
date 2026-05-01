@@ -1,62 +1,1180 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-八字分析 skill 的可执行入口
+bin/bazi - 八字精批分析主入口
+
+调用方式（OpenClaw exec 工具）：
+  # 完整精批
+  python3 bin/bazi --year 1990 --month 1 --day 8 --hour 15 --minute 45 \
+                   --gender female --city 西安 --mode full
+
+  # 月运分析（指定流年+流月）
+  python3 bin/bazi --year 1990 --month 1 --day 8 --hour 15 --minute 45 \
+                   --gender female --city 西安 --mode monthly \
+                   --liuyear 2026 --liuyue-month 4
+
+  # 日运分析（指定流年+流月+流日）
+  python3 bin/bazi --year 1990 --month 1 --day 8 --hour 15 --minute 45 \
+                   --gender female --city 西安 --mode daily \
+                   --liuyear 2026 --liuyue-month 4 --liuri-date 2026-04-15
+
+参数：
+  --year          公历出生年
+  --month         公历出生月（1-12）
+  --day           公历出生日（1-31）
+  --hour          出生小时（24小时制，北京时间）
+  --minute        出生分钟（0-59）
+  --gender        male / female
+  --city          出生城市（用于真太阳时校准）
+  --mode          full（完整精批）/ quick（仅排盘）/ monthly（月运）/ daily（日运）
+  --level         同 --mode，兼容旧调用方式
+  --liuyear       流年（公历年份），monthly/daily 模式使用，默认今年
+  --liuyue-month  流月月序（1=寅月…12=丑月），monthly/daily 模式使用
+  --liuyue-gz     流月干支（如 丙辰），优先级高于 --liuyue-month
+  --liuri-date    流日日期 YYYY-MM-DD，daily 模式使用，默认今天
+
+输出：JSON，写入 stdout
 """
+
+import os
 import sys
 import json
-import subprocess
-import os
-import re
-import shutil
+import argparse
+from datetime import datetime
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BAZI_SCRIPT = os.path.join(SCRIPT_DIR, '..', 'bazi_with_five_yun.py')
+# 路径设置
+_BIN_DIR   = os.path.dirname(os.path.abspath(__file__))
+_SKILL_DIR = os.path.dirname(_BIN_DIR)
+sys.path.insert(0, _SKILL_DIR)
+sys.path.insert(0, os.path.join(_SKILL_DIR, 'vendor'))
+sys.path.insert(0, os.path.join(_SKILL_DIR, 'src'))
 
-# Strip ANSI escape sequences for cleaner output
-ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+# src 层
+from bazi_chart import build_bazi_chart
+from bazi_chart_year import build_year_chart
+from bazi_chart_month import build_month_chart
+from bazi_chart_day import build_day_chart
 
-def strip_ansi(text):
-    return ANSI_RE.sub('', text)
+# lib 层
+from lib.ten_gods_analyzer import analyze_ten_gods, get_dominant_ten_gods, identify_key_stars
+from lib.format_analyzer import format_full_analysis
+from lib.character_profiler import build_character_profile
+from lib.six_relations_analyzer import analyze_six_relations
+from lib.wealth_career_analyzer import analyze_wealth_career
+from lib.health_predictor import predict_health
+from lib.luck_cycle_analyzer import analyze_current_luck, format_luck_cycle_report
+from lib.advice_generator import generate_advice
+from lib.ancient_books_fetcher import get_relevant_passages, format_passages_for_report
+from lib.wuyu_analyzer import WuyuAnalyzer
+from lib.daily_fortune import DailyFortune
+
+
+# ─────────────────────────────────────────────────────────────────
+# 格式适配：bazi_chart pillars（列表）→ lib 期望的 pillars（字典）
+# ─────────────────────────────────────────────────────────────────
+
+def _adapt_pillars(chart: dict) -> dict:
+    """
+    将 bazi_chart 输出的 pillars 列表转换为 lib/ 期望的字典格式。
+
+    bazi_chart 格式（列表）：
+      [{'index':0,'name':'年柱','gan':'乙','zhi':'亥',
+        'gan_shishen':'官','zhi_shishen':'才',
+        'cangygan':['壬','甲'],
+        'cangygan_details':[{'gan':'壬','wuxing':'水','shishen':'才'},...] }, ...]
+
+    lib 期望格式（字典）：
+      {
+        'year_pillar':  {
+            'stem':'乙','branch':'亥','gz':'乙亥',
+            'stem_element':'木','branch_element':'水',
+            'hidden_stems':['壬','甲'],
+            'stem_ten_god':'官',          ← lib 需要这个
+            'branch_hidden':[             ← lib 需要这个
+                {'stem':'壬','ten_god':'才'},
+                {'stem':'甲','ten_god':'杀'},
+            ]
+        },
+        ...
+        'day_master': '戊',
+        'day_master_element': '土',
+      }
+    """
+    from lib.ganzhi_calculator import STEM_ELEMENTS, BRANCH_ELEMENTS, HIDDEN_STEMS
+
+    pillars_list = chart.get('pillars', [])
+    keys = ['year_pillar', 'month_pillar', 'day_pillar', 'hour_pillar']
+
+    adapted = {}
+    for i, key in enumerate(keys):
+        if i >= len(pillars_list):
+            break
+        p = pillars_list[i]
+        gan = p['gan']
+        zhi = p['zhi']
+        hidden_raw = HIDDEN_STEMS.get(zhi, [])
+
+        # 从 cangygan_details 构建 branch_hidden（lib 期望格式）
+        branch_hidden = []
+        for cd in p.get('cangygan_details', []):
+            branch_hidden.append({
+                'stem':    cd['gan'],
+                'ten_god': cd['shishen'],
+            })
+
+        adapted[key] = {
+            'stem':           gan,
+            'branch':         zhi,
+            'gz':             gan + zhi,
+            'stem_element':   STEM_ELEMENTS.get(gan, ''),
+            'branch_element': BRANCH_ELEMENTS.get(zhi, ''),
+            'hidden_stems':   [s for s in hidden_raw if s],
+            # lib/ 需要的十神字段
+            'stem_ten_god':   p.get('gan_shishen', ''),
+            'branch_hidden':  branch_hidden,
+        }
+
+    day_gan = chart.get('day_gan', '')
+    adapted['day_master']         = day_gan
+    adapted['day_master_element'] = STEM_ELEMENTS.get(day_gan, '')
+
+    return adapted
+
+
+# ─────────────────────────────────────────────────────────────────
+# 报告生成
+# ─────────────────────────────────────────────────────────────────
+
+def _build_report_text(chart: dict, analysis: dict) -> str:
+    """将所有分析结果组装成可读的精批报告文字。"""
+    lines = []
+    meta = chart.get('meta', {})
+    gz   = chart.get('ganzhi', {})
+
+    # 标题
+    lines.append('=' * 60)
+    lines.append('【八字精批分析报告】')
+    lines.append('=' * 60)
+
+    # 基本信息
+    sc = meta.get('solar_correction') or {}
+    correction_note = ''
+    if sc.get('applied'):
+        correction_note = f"（真太阳时校准：{sc['original']} → {sc['corrected']}，偏差{sc['offset_min']:.1f}分钟）"
+    lines.append(f"公历：{meta.get('solar_date')} {meta.get('solar_time_input')} {correction_note}")
+    lines.append(f"农历：{meta.get('lunar_date')}")
+    lines.append(f"性别：{'男' if meta.get('gender','').lower() in ('male','m','男') else '女'}")
+    lines.append(f"出生地：{meta.get('city','未知')}")
+    lines.append('')
+
+    # 四柱
+    lines.append('【四柱干支】')
+    lines.append(f"  年柱 {gz.get('year','')}  月柱 {gz.get('month','')}  日柱 {gz.get('day','')}  时柱 {gz.get('hour','')}")
+    lines.append('')
+
+    # 五行
+    wuxing = chart.get('wuxing', {})
+    ranked = wuxing.get('ranked', [])
+    wx_str = '  '.join([f"{r['wuxing']}{r['pct']}%" for r in ranked])
+    lines.append(f"【五行分布】{wx_str}")
+    lines.append('')
+
+    # 格局用神
+    fmt = analysis.get('format_analysis', {})
+    if fmt:
+        lines.append('【第一模块：格局与用神】')
+        lines.append(fmt.get('summary', ''))
+        lines.append('')
+
+    # 性格
+    char = analysis.get('character', {})
+    if char:
+        lines.append('【第二模块：性格特质】')
+        lines.append(char.get('summary', ''))
+        lines.append('')
+
+    # 六亲
+    six = analysis.get('six_relations', {})
+    if six:
+        lines.append('【第三模块：六亲关系】')
+        lines.append(six.get('summary', ''))
+        lines.append('')
+
+    # 财富事业
+    wealth = analysis.get('wealth_career', {})
+    if wealth:
+        lines.append('【第四模块：财富事业】')
+        lines.append(wealth.get('summary', ''))
+        lines.append('')
+
+    # 健康
+    health = analysis.get('health', {})
+    if health:
+        lines.append('【第五模块：健康预警】')
+        lines.append(health.get('summary', ''))
+        lines.append('')
+
+    # 大运流年
+    lines.append('【第六模块：大运流年】')
+    lines.append(format_luck_cycle_report(chart))
+    lines.append('')
+
+    # 趋吉避凶
+    advice = analysis.get('advice', {})
+    if advice:
+        lines.append('【第七模块：趋吉避凶】')
+        lines.append(advice.get('summary', ''))
+        lines.append('')
+
+    # 五运分析
+    wuyu = analysis.get('wuyu', {})
+    if wuyu:
+        lines.append('【第八模块：妻财子禄寿五运分析】')
+        lines.append(wuyu.get('text', ''))
+        lines.append('')
+
+    lines.append('=' * 60)
+    lines.append(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    return '\n'.join(lines)
+
+
+def _build_llm_prompt(chart: dict, analysis: dict) -> dict:
+    """
+    构建给 MiniMax 的 prompt 数据包。
+
+    包含两部分：
+    1. system_context：命理背景数据（结构化，供模型理解命局）
+    2. writing_prompt：写作指令（告诉模型怎么写）
+
+    OpenClaw 收到后，将 writing_prompt 作为用户消息发给 MiniMax，
+    system_context 作为上下文注入。
+    """
+    meta   = chart.get('meta', {})
+    gz     = chart.get('ganzhi', {})
+    wuxing = chart.get('wuxing', {})
+    fmt    = analysis.get('format_analysis', {})
+    six    = analysis.get('six_relations', {})
+    wealth = analysis.get('wealth_career', {})
+    health = analysis.get('health', {})
+    advice = analysis.get('advice', {})
+    wuyu   = analysis.get('wuyu', {})
+    current = chart.get('current', {})
+
+    gender_cn = '男' if meta.get('gender', '').lower() in ('male', 'm', '男') else '女'
+    dayun_gz  = current.get('dayun', {}).get('ganzhi', '') if current else ''
+    year_gz   = current.get('liuyear', {}).get('ganzhi', '') if current else ''
+    cur_year  = meta.get('current_year', '')
+
+    # ── 命局核心数据摘要 ──────────────────────────────────────────
+    system_context = {
+        'basic': {
+            'solar_date':  meta.get('solar_date', ''),
+            'solar_time':  meta.get('solar_time_used', ''),
+            'lunar_date':  meta.get('lunar_date', ''),
+            'gender':      gender_cn,
+            'city':        meta.get('city', ''),
+            'pillars':     f"年{gz.get('year','')} 月{gz.get('month','')} 日{gz.get('day','')} 时{gz.get('hour','')}",
+            'day_master':  chart.get('day_gan', ''),
+        },
+        'wuxing': {
+            r['wuxing']: f"{r['score']}分({r['pct']}%)"
+            for r in wuxing.get('ranked', [])
+        },
+        'format': {
+            'name':     fmt.get('format_name', ''),
+            'strength': fmt.get('strength', ''),
+            'yong':     fmt.get('yong_shen', ''),
+            'ji':       fmt.get('ji_shen', []),
+        },
+        'current_luck': {
+            'dayun':   dayun_gz,
+            'liuyear': year_gz,
+            'year':    cur_year,
+        },
+        'wuyu_analysis': {
+            dim: {
+                'rating': data.get('rating', ''),
+                'key_points': [
+                    n.replace('[原局] ', '').replace('[大运] ', '').replace('[流年] ', '')
+                    for n in data.get('notes', [])[:6]
+                ],
+            }
+            for dim, data in wuyu.get('merged', {}).items()
+        } if wuyu.get('merged') else {},
+        'six_relations_raw': {
+            'parent_bond':    six.get('parents', {}).get('parent_bond', ''),
+            'parent_detail':  six.get('parents', {}).get('parent_detail', ''),
+            'marriage':       six.get('marriage', {}).get('marriage_quality', ''),
+            'spouse_traits':  six.get('marriage', {}).get('spouse_traits', ''),
+            'marriage_risk':  six.get('marriage', {}).get('marriage_risk', ''),
+            'children_bond':  six.get('children', {}).get('children_bond', ''),
+            'late_life':      six.get('children', {}).get('late_life', ''),
+        },
+        'wealth_raw': {
+            'level':   wealth.get('wealth_level', {}).get('level', ''),
+            'desc':    wealth.get('wealth_level', {}).get('description', ''),
+            'methods': wealth.get('wealth_method', []),
+            'peak':    wealth.get('career_peaks', {}).get('career_peak_age', ''),
+        },
+        'health_raw': {
+            'constitution': health.get('constitution', {}).get('description', ''),
+            'risks': [
+                f"{r['organs']}：{r['risk_detail']}"
+                for r in health.get('health_risks', {}).values()
+                if r.get('risk_level') != '平稳'
+            ],
+        },
+        'advice_raw': advice.get('life_advice', []),
+    }
+
+    # ── 写作 prompt ───────────────────────────────────────────────
+    writing_prompt = f"""你是一位精通子平八字的命理师，现在需要根据以下命盘数据，为用户写一份有温度、言之有物的八字精批报告。
+
+## 命盘基本信息
+- 公历：{meta.get('solar_date')} {meta.get('solar_time_used')}（{gender_cn}命）
+- 农历：{meta.get('lunar_date')}
+- 出生地：{meta.get('city', '未知')}
+- 四柱：年{gz.get('year','')} 月{gz.get('month','')} 日{gz.get('day','')} 时{gz.get('hour','')}
+- 日主：{chart.get('day_gan','')}（{fmt.get('strength','')}）
+- 格局：{fmt.get('format_name','')}
+- 用神：{fmt.get('yong_shen','')}  忌神：{'、'.join(fmt.get('ji_shen',[]))}
+- 五行：{' '.join([f"{r['wuxing']}{r['pct']}%" for r in wuxing.get('ranked',[])])}
+- 当前：{cur_year}年，走{dayun_gz}大运，流年{year_gz}
+
+## 写作要求
+请按以下模块写作，全文3000-5000字，语气亲切自然，像命理师在和朋友面对面聊天：
+
+### 一、六亲与感情
+重点分析：
+- 父母缘：{six.get('parents',{}).get('parent_detail','')}
+- 婚姻：{six.get('marriage',{}).get('marriage_quality','')}；{six.get('marriage',{}).get('marriage_risk','')}
+- 配偶特质：{six.get('marriage',{}).get('spouse_traits','')}
+- 子女：{six.get('children',{}).get('children_bond','')}
+要求：不要只重复以上结论，要解释**为什么**这个命局会有这些特质（引用具体干支和十神），并结合当前{dayun_gz}大运给出时间维度的建议。
+
+### 二、财富与事业
+重点分析：
+- 财富等级：{wealth.get('wealth_level',{}).get('level','')}——{wealth.get('wealth_level',{}).get('description','')}
+- 求财方式：{'；'.join(wealth.get('wealth_method',[])[:2])}
+- 事业高点：{wealth.get('career_peaks',{}).get('career_peak_age','')}
+要求：解释命局中哪些干支组合决定了这个财富格局，当前大运{dayun_gz}对财运有何具体影响。
+
+### 三、健康
+重点分析：
+- 体质：{health.get('constitution',{}).get('description','')}
+- 需注意：{'；'.join([f"{r['organs']}：{r['risk_detail']}" for r in health.get('health_risks',{}).values() if r.get('risk_level')!='平稳'][:2])}
+要求：从五行偏枯的角度解释健康隐患的根源，给出具体可操作的保养建议。
+
+### 四、妻财子禄寿当前运势（{cur_year}年，{dayun_gz}大运 × {year_gz}流年）
+基于以下分析要点展开：
+{_format_wuyu_for_prompt(wuyu)}
+要求：这是最重要的部分，要把原局底色、大运背景、流年叠加三层逻辑讲清楚，让用户明白**现在这个时间点**在妻财子禄寿各方面的具体处境和建议。
+
+### 五、趋吉避凶建议
+{'；'.join(advice.get('life_advice',[]))}
+要求：结合格局和当前大运，给出3-5条具体可操作的建议，不要泛泛而谈。
+
+## 注意事项
+- 全文用中文，语气温和专业
+- 每个结论都要有命理依据（干支、十神、五行）
+- 不要用"根据数据显示"这类机器味道的表达
+- 可以适当引用经典命理著作的观点
+"""
+
+    return {
+        'system_context':  system_context,
+        'writing_prompt':  writing_prompt,
+        'usage_note':      (
+            'OpenClaw 处理说明：将 writing_prompt 作为用户消息发给 MiniMax，'
+            'system_context 作为结构化背景数据注入对话上下文。'
+            'MiniMax 的回复即为最终呈现给用户的精批报告正文。'
+        ),
+    }
+
+
+def _format_wuyu_for_prompt(wuyu: dict) -> str:
+    """将五运分析数据格式化为 prompt 中的要点列表。"""
+    if not wuyu or not wuyu.get('merged'):
+        return '（五运数据暂无）'
+
+    dim_names = {'qi': '妻', 'cai': '财', 'zi': '子', 'lu': '禄', 'shou': '寿'}
+    lines = []
+    for dim, name in dim_names.items():
+        data = wuyu['merged'].get(dim, {})
+        rating = data.get('rating', '平')
+        notes  = data.get('notes', [])
+        clean_notes = [
+            n.replace('[原局] ', '').replace('[大运] ', '').replace('[流年] ', '').replace('[流月] ', '').replace('[流日] ', '')
+            for n in notes[:3]
+        ]
+        lines.append(f"- {name}运【{rating}】：{'；'.join(clean_notes) if clean_notes else '平稳'}")
+
+    return '\n'.join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────
+# 月运 prompt 构建
+# ─────────────────────────────────────────────────────────────────
+
+def _build_monthly_prompt(base_chart: dict, month_chart: dict, wuyu: dict) -> dict:
+    """
+    构建月运分析的 prompt 数据包。
+    聚焦在"这个月"的妻财子禄寿五运变化，以及黄历/刑冲合提示。
+    """
+    meta     = base_chart.get('meta', {})
+    gz       = base_chart.get('ganzhi', {})
+    wuxing   = base_chart.get('wuxing', {})
+    yong_info = base_chart.get('yong_shen', {})
+
+    gender_cn  = '男' if meta.get('gender', '').lower() in ('male', 'm', '男') else '女'
+    day_gan    = base_chart.get('day_gan', '')
+    liuyear_gz = month_chart.get('liuyear', {}).get('ganzhi', '')
+    liuyue_gz  = month_chart.get('liuyue', {}).get('ganzhi', '')
+    liuyue_cn  = month_chart.get('liuyue', {}).get('month_cn', '')
+    dayun_gz   = month_chart.get('dayun', {}).get('ganzhi', '')
+    liuyear    = month_chart.get('context', {}).get('liuyear', '')
+    layer_desc = month_chart.get('context', {}).get('layer_desc', '')
+    yong_shen  = yong_info.get('yong_shen', '')
+    ji_shen    = yong_info.get('ji_shen', [])
+    xi_shen    = yong_info.get('xi_shen', [])
+    xiang_shen = yong_info.get('xiang_shen', [])
+
+    # 假从动态评估：只在精批（大运层级）做，月运/日运直接继承精批结论
+    # 用神/喜神/忌神以原局为准，大运可能影响，流月/流日不改变用神
+    jiacao_note = base_chart.get('jiacao_shift_note', '')  # 从精批结果继承
+
+    # 刑冲合摘要
+    # 用新的 zhi_relations 引擎重新计算流月与命局+大运+流年的刑冲合
+    # 不使用 month_chart['interactions'] 的旧数据（source='未知'，缺少三会/六害/相破）
+    try:
+        from lib.zhi_relations import analyze_zhi_relations
+        pillars_list = base_chart.get('pillars', [])
+        yuanju_zhis  = frozenset(p['zhi'] for p in pillars_list if 'zhi' in p)
+        dayun_zhi    = dayun_gz[1]   if len(dayun_gz)   >= 2 else ''
+        liuyear_zhi  = liuyear_gz[1] if len(liuyear_gz) >= 2 else ''
+        liuyue_zhi   = liuyue_gz[1]  if len(liuyue_gz)  >= 2 else ''
+        # 流月与（命局+大运+流年）的关系
+        combined_zhis = yuanju_zhis | ({dayun_zhi} if dayun_zhi else set()) | ({liuyear_zhi} if liuyear_zhi else set())
+        rel_result = analyze_zhi_relations(liuyue_zhi, combined_zhis) if liuyue_zhi else {'relations': [], 'summary': '无明显刑冲合'}
+
+        # 构建来源标注
+        zhi_source_map = {p['zhi']: p['name'] for p in pillars_list}
+        if dayun_zhi:  zhi_source_map[dayun_zhi]  = '大运'
+        if liuyear_zhi: zhi_source_map[liuyear_zhi] = '流年'
+
+        inter_lines = []
+        for r in rel_result['relations'][:6]:
+            partner  = r.get('partner', '')
+            source   = zhi_source_map.get(partner, '')
+            source_str = f'（来自{source}）' if source else ''
+            rtype    = r.get('type', '')
+            elem     = r.get('element', '')
+
+            # 六合：合而不化，按两支各自原五行判断，不按化神
+            if rtype == '六合':
+                from lib.ganzhi_calculator import BRANCH_ELEMENTS
+                zhi_elem     = BRANCH_ELEMENTS.get(liuyue_zhi, '')
+                partner_elem = BRANCH_ELEMENTS.get(partner, '')
+                if zhi_elem == yong_shen or partner_elem == yong_shen:
+                    effect = f'合而不化，用神{yong_shen}得稳，小有助益'
+                elif zhi_elem in ji_shen and partner_elem in ji_shen:
+                    effect = f'合而不化，忌神相合，轻微不利'
+                elif zhi_elem in ji_shen or partner_elem in ji_shen:
+                    effect = f'合而不化，忌神被牵制，中性'
+                else:
+                    effect = '合而不化，两支相互稳定，影响平稳'
+            elif r['is_positive']:
+                if elem == yong_shen:
+                    effect = f'用神{elem}得力，有利'
+                elif elem in ji_shen:
+                    effect = f'忌神{elem}聚合，需防'
+                else:
+                    effect = '有助力'
+            else:
+                if elem == yong_shen:
+                    effect = f'用神{elem}受损，需防'
+                elif elem in ji_shen:
+                    effect = f'忌神{elem}受制，反为有利'
+                else:
+                    effect = r['desc'].split('，')[-1] if '，' in r['desc'] else '需注意'
+
+            inter_lines.append(f"  - {r['name']}{source_str}：{effect}")
+
+        interactions_summary = rel_result.get('summary', '无明显刑冲合')
+        interaction_details_new = rel_result['relations']
+    except Exception:
+        # 降级使用旧数据
+        interactions_summary = month_chart.get('interactions', {}).get('summary', '无明显刑冲合')
+        inter_lines = [f"  - {i['desc']}（{i.get('effect','')}）"
+                       for i in month_chart.get('interactions', {}).get('zhi', [])[:5]]
+        interaction_details_new = []
+
+    system_context = {
+        'basic': {
+            'solar_date':  meta.get('solar_date', ''),
+            'gender':      gender_cn,
+            'pillars':     f"年{gz.get('year','')} 月{gz.get('month','')} 日{gz.get('day','')} 时{gz.get('hour','')}",
+            'day_master':  day_gan,
+            'yong_shen':   yong_shen,
+            'ji_shen':     ji_shen,
+            'xi_shen':     xi_shen,
+            'xiang_shen':  xiang_shen,
+        },
+        'wuxing': {r['wuxing']: f"{r['pct']}%" for r in wuxing.get('ranked', [])},
+        'current_luck': {
+            'layer_desc': layer_desc,
+            'dayun_gz':   dayun_gz,
+            'liuyear_gz': liuyear_gz,
+            'liuyue_gz':  liuyue_gz,
+            'liuyear':    liuyear,
+        },
+        'liuyue_detail': {
+            'ganzhi':      liuyue_gz,
+            'gan_shishen': month_chart.get('liuyue', {}).get('gan_shishen', ''),
+            'zhi_shishen': month_chart.get('liuyue', {}).get('zhi_shishen', ''),
+            'cangygan':    month_chart.get('liuyue', {}).get('cangygan', []),
+            'xun_kong':    month_chart.get('liuyue', {}).get('xun_kong', ''),
+        },
+        'interactions': {
+            'summary': interactions_summary,
+            'details': [
+                {'name': r['name'], 'desc': r['desc'], 'element': r.get('element',''), 'is_positive': r['is_positive']}
+                for r in interaction_details_new[:6]
+            ],
+        },
+        'jiacao_shift': jiacao_note,
+        'wuyu_analysis': {
+            dim: {
+                'rating':     data.get('rating', ''),
+                'key_points': [
+                    n.replace('[原局] ', '').replace('[大运] ', '').replace('[流年] ', '').replace('[流月] ', '')
+                    for n in data.get('notes', [])[:4]
+                ],
+            }
+            for dim, data in wuyu.get('merged', {}).items()
+        } if wuyu.get('merged') else {},
+    }
+
+    inter_text = '\n'.join(inter_lines) if inter_lines else '  - 本月干支与命局无明显刑冲合，运势平稳'
+
+    # 喜神/相神说明
+    xi_xiang_note = ''
+    if xi_shen:
+        xi_xiang_note += f'喜神：{"、".join(xi_shen)}（生助用神，间接有利）  '
+    if xiang_shen:
+        xi_xiang_note += f'相神：{"、".join(xiang_shen)}（帮扶日主）'
+
+    # 假从评估说明
+    jiacao_section = f'\n## 假从格动态评估\n{jiacao_note}' if jiacao_note else ''
+
+    writing_prompt = f"""你是一位精通子平八字的命理师，请为以下用户写一份{liuyear}年{liuyue_cn}的月运分析。
+
+## 用户命盘
+- 四柱：年{gz.get('year','')} 月{gz.get('month','')} 日{gz.get('day','')} 时{gz.get('hour','')}（{gender_cn}命）
+- 日主：{day_gan}  用神：{yong_shen}  忌神：{'、'.join(ji_shen)}
+- {xi_xiang_note}
+- 当前层级：{layer_desc}
+{jiacao_section}
+
+## 本月干支信息
+- 流月干支：{liuyue_gz}（{month_chart.get('liuyue',{}).get('gan_shishen','')} / {month_chart.get('liuyue',{}).get('zhi_shishen','')}）
+- 空亡：{month_chart.get('liuyue',{}).get('xun_kong','无') or '无'}
+- 本月与命局的刑冲合：
+{inter_text}
+
+## 妻财子禄寿本月运势
+{_format_wuyu_for_prompt(wuyu)}
+
+## 写作要求
+请写一份1000-2000字的月运分析，包含：
+
+1. **本月整体气场**：结合大运背景（{dayun_gz}）和流年（{liuyear_gz}），说明{liuyue_gz}流月叠加后的整体气场（3句话以内）
+
+2. **妻财子禄寿重点**：从上面五运评级中，挑出评级最高和最低的各一项，展开分析——为什么这个月这两项会有这样的表现，命盘中哪些干支在起作用
+
+3. **刑冲合提示**：如有明显刑冲合，用通俗语言解释对本月的具体影响；如无，说明本月运势平稳的原因
+
+4. **本月行动建议**：结合用神忌神{f"（用神{yong_shen}，喜神{'、'.join(xi_shen)}）" if xi_shen else f"（用神{yong_shen}）"}，给出2-3条本月适合做/需要注意的事
+
+语气亲切自然，像命理师在和朋友聊天，结尾加一句鼓励的话。
+"""
+
+    return {
+        'system_context': system_context,
+        'writing_prompt': writing_prompt,
+        'usage_note': (
+            'OpenClaw 处理说明：将 writing_prompt 作为用户消息发给 MiniMax，'
+            'system_context 作为结构化背景数据注入对话上下文。'
+        ),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# 日运 prompt 构建
+# ─────────────────────────────────────────────────────────────────
+
+def _build_daily_prompt(base_chart: dict, day_chart: dict, wuyu: dict) -> dict:
+    """
+    构建日运分析的 prompt 数据包。
+    日运定位：每日推送，轻量、实用、日常化。
+    聚焦：今日干支气场 + 黄历宜忌 + 刑冲合提示 + 实用生活建议
+    去掉：命盘四柱背景、用神忌神、妻财子禄寿五运（日粒度太细）
+    """
+    meta      = base_chart.get('meta', {})
+    yong_info = base_chart.get('yong_shen', {})
+
+    gender_cn  = '男' if meta.get('gender', '').lower() in ('male', 'm', '男') else '女'
+    day_gan    = base_chart.get('day_gan', '')
+    liuyear_gz = day_chart.get('liuyear', {}).get('ganzhi', '')
+    liuyue_gz  = day_chart.get('liuyue', {}).get('ganzhi', '')
+    liuri_gz   = day_chart.get('liuri', {}).get('ganzhi', '')
+    liuri_date = day_chart.get('liuri', {}).get('date', '')
+    dayun_gz   = day_chart.get('dayun', {}).get('ganzhi', '')
+    yong_shen  = yong_info.get('yong_shen', '')
+    ji_shen    = yong_info.get('ji_shen', [])
+
+    # 黄历信息
+    liuri_info = day_chart.get('liuri', {})
+    huangli    = liuri_info.get('huangli', {})
+    positions  = liuri_info.get('positions', {})
+    lunar_date = liuri_info.get('lunar_date', '')
+    yi_list    = huangli.get('yi', [])
+    ji_list_hl = huangli.get('ji', [])
+    yi_str     = '、'.join(yi_list[:6])
+    ji_str     = '、'.join(ji_list_hl[:5])
+    zhi_xing   = huangli.get('zhi_xing', '')
+    nayin      = huangli.get('nayin', '')
+    chong      = huangli.get('chong', '')
+    sha_dir    = huangli.get('sha', '')
+
+    # 今日干支十神
+    gan_shishen = day_chart.get('liuri', {}).get('gan_shishen', '')
+    zhi_shishen = day_chart.get('liuri', {}).get('zhi_shishen', '')
+
+    # 用神对应的幸运色和食物
+    lucky_colors_map = {
+        '木': ['绿色', '青色'],
+        '火': ['红色', '橙色', '紫色'],
+        '土': ['黄色', '棕色', '米色'],
+        '金': ['白色', '金色', '银色'],
+        '水': ['黑色', '深蓝色', '藏青色'],
+    }
+    lucky_foods_map = {
+        '木': ['绿叶蔬菜', '木耳', '香菇', '坚果'],
+        '火': ['辣椒', '红色食物', '烤制食品', '羊肉'],
+        '土': ['根茎类蔬菜', '黄色食物', '薯类', '豆类'],
+        '金': ['白色食物', '梨', '百合', '白萝卜', '鱼'],
+        '水': ['黑色食物', '黑豆', '海鲜', '蓝莓', '核桃'],
+    }
+    lucky_colors = '、'.join(lucky_colors_map.get(yong_shen, []))
+    lucky_foods  = '、'.join(lucky_foods_map.get(yong_shen, []))
+
+    # 用新的 zhi_relations 引擎计算今日刑冲合
+    try:
+        from lib.zhi_relations import analyze_zhi_relations
+        from lib.ganzhi_calculator import BRANCH_ELEMENTS
+        pillars_list = base_chart.get('pillars', [])
+        yuanju_zhis  = frozenset(p['zhi'] for p in pillars_list if 'zhi' in p)
+        dayun_zhi    = dayun_gz[1]   if len(dayun_gz)   >= 2 else ''
+        liuyear_zhi  = liuyear_gz[1] if len(liuyear_gz) >= 2 else ''
+        liuyue_zhi   = liuyue_gz[1]  if len(liuyue_gz)  >= 2 else ''
+        liuri_zhi    = liuri_gz[1]   if len(liuri_gz)   >= 2 else ''
+
+        combined_zhis = (yuanju_zhis
+                         | ({dayun_zhi}   if dayun_zhi   else set())
+                         | ({liuyear_zhi} if liuyear_zhi else set())
+                         | ({liuyue_zhi}  if liuyue_zhi  else set()))
+
+        rel_result = analyze_zhi_relations(liuri_zhi, combined_zhis) if liuri_zhi else {'relations': [], 'summary': '无明显刑冲合'}
+
+        # 来源标注
+        zhi_source_map = {p['zhi']: p['name'] for p in pillars_list}
+        if dayun_zhi:   zhi_source_map[dayun_zhi]   = '大运'
+        if liuyear_zhi: zhi_source_map[liuyear_zhi] = '流年'
+        if liuyue_zhi:  zhi_source_map[liuyue_zhi]  = '流月'
+
+        # 将刑冲合翻译为日常语言
+        daily_inter_lines = []
+        for r in rel_result['relations'][:5]:
+            rtype   = r.get('type', '')
+            partner = r.get('partner', '')
+            source  = zhi_source_map.get(partner, '')
+            elem    = r.get('element', '')
+
+            # 日常化翻译
+            if rtype == '六冲':
+                # 冲的是命主自己命局里的地支，说对命主的影响
+                source_desc = f'命局{source}' if source else '命局'
+                daily_inter_lines.append(
+                    f"今日{liuri_zhi}冲{partner}（{source_desc}受冲），"
+                    f"{source_desc}代表{'早年根基' if source=='年柱' else '父母兄弟' if source=='月柱' else '配偶感情' if source=='日柱' else '子女晚年' if source=='时柱' else '大运背景' if source=='大运' else '流年运势' if source=='流年' else '本月气场' if source=='流月' else ''}，"
+                    f"今天这方面容易有变动或波折，出行注意安全，重要决定可稍作缓冲"
+                )
+            elif rtype == '三会':
+                if elem == yong_shen:
+                    daily_inter_lines.append(f"今日{r['name']}，用神{elem}大旺，整体运势极佳，适合主动出击")
+                elif elem in ji_shen:
+                    daily_inter_lines.append(f"今日{r['name']}，忌神{elem}极旺，需格外谨慎，避免冲动决策")
+                else:
+                    daily_inter_lines.append(f"今日{r['name']}，{elem}五行力量极强，影响显著")
+            elif rtype == '三合':
+                if elem == yong_shen:
+                    daily_inter_lines.append(f"今日{r['name']}，用神{elem}得力，运势顺畅，可推进重要事项")
+                elif elem in ji_shen:
+                    daily_inter_lines.append(f"今日{r['name']}，忌神{elem}聚合，财务和情绪需多留意")
+                else:
+                    daily_inter_lines.append(f"今日{r['name']}，{elem}五行聚合，{source}方向有助力")
+            elif rtype == '六合':
+                zhi_elem     = BRANCH_ELEMENTS.get(liuri_zhi, '')
+                partner_elem = BRANCH_ELEMENTS.get(partner, '')
+                if zhi_elem == yong_shen or partner_elem == yong_shen:
+                    daily_inter_lines.append(f"今日{liuri_zhi}与{partner}（{source}）六合，合而不化，用神得稳，整体平顺")
+                elif zhi_elem in ji_shen or partner_elem in ji_shen:
+                    daily_inter_lines.append(f"今日{liuri_zhi}与{partner}（{source}）六合，忌神被牵制，压力有所缓解")
+                else:
+                    daily_inter_lines.append(f"今日{liuri_zhi}与{partner}（{source}）六合，合而不化，运势平稳")
+            elif rtype in ('三刑', '自刑'):
+                daily_inter_lines.append(
+                    f"今日{r['name']}，注意口舌是非，避免与人争执，"
+                    f"健康方面留意{'肝胆' if elem=='木' else '心脏' if elem=='火' else '脾胃' if elem=='土' else '肺' if elem=='金' else '肾脏'}"
+                )
+            elif rtype == '六害':
+                daily_inter_lines.append(f"今日{r['name']}，小心暗中损耗，注意防小人，财物妥善保管")
+            elif rtype == '半三合':
+                if elem == yong_shen:
+                    daily_inter_lines.append(f"今日{r['name']}，用神小有聚合，运势略有助益")
+
+        inter_text = '\n'.join(f"  - {l}" for l in daily_inter_lines) if daily_inter_lines else '  - 今日干支与命局无明显刑冲合，运势平稳顺畅'
+
+    except Exception:
+        interaction_details = day_chart.get('interactions', {}).get('zhi', [])
+        inter_text = '\n'.join(
+            f"  - {i['desc']}（{i.get('effect','')}）"
+            for i in interaction_details[:5]
+        ) or '  - 今日干支与命局无明显刑冲合，运势平稳'
+
+    # 十神日常含义
+    shishen_daily_map = {
+        '比': '今日比肩当令，独立自主，适合单独行动，竞争意识强，注意不要太固执',
+        '劫': '今日劫财当令，财务需谨慎，避免冲动消费，注意合伙纠纷，但行动力强',
+        '食': '今日食神当令，口福好，适合美食、创作、享受，心情愉快，贵人易现',
+        '伤': '今日伤官当令，才华发挥好，适合创意工作，但注意言辞，避免与上司冲突',
+        '才': '今日偏财当令，偏财机遇多，适合社交、投资，人缘好，但花钱也容易',
+        '财': '今日正财当令，财运稳健，适合理财、谈正式合作，踏实做事有收获',
+        '杀': '今日七杀当令，压力较大，需展现实力，避免冲动，健康注意安全',
+        '官': '今日正官当令，适合处理正式事务、见上司，形象好，注意规则',
+        '枭': '今日偏印当令，直觉敏锐，适合研究、独处思考，但注意不要钻牛角尖',
+        '印': '今日正印当令，贵人运好，适合学习、求助，长辈有助力，心态平和',
+        '日主': '',
+    }
+    gan_daily = shishen_daily_map.get(gan_shishen, '')
+    zhi_daily = shishen_daily_map.get(zhi_shishen, '')
+
+    system_context = {
+        'date':        liuri_date,
+        'lunar_date':  lunar_date,
+        'ganzhi':      liuri_gz,
+        'gan_shishen': gan_shishen,
+        'zhi_shishen': zhi_shishen,
+        'zhi_xing':    zhi_xing,
+        'nayin':       nayin,
+        'chong':       chong,
+        'sha_dir':     sha_dir,
+        'yi':          yi_list[:6],
+        'ji':          ji_list_hl[:5],
+        'positions':   positions,
+        'yong_shen':   yong_shen,
+        'ji_shen':     ji_shen,
+        'lucky_colors': lucky_colors,
+        'lucky_foods':  lucky_foods,
+        'layer_desc':  f'{dayun_gz}大运 × {liuyear_gz}流年 × {liuyue_gz}流月 × {liuri_gz}流日',
+    }
+
+    writing_prompt = f"""你是一位精通子平八字的命理师，请为以下用户写一份今日运势早安推送。
+
+## 命盘背景（供分析参考，不需要在输出中逐一列出）
+- 日主：{day_gan}  用神：{yong_shen}  忌神：{'、'.join(ji_shen)}
+- 当前层级：{dayun_gz}大运 × {liuyear_gz}流年 × {liuyue_gz}流月 × {liuri_gz}流日
+
+## 今日基本信息
+- 日期：{liuri_date}（{lunar_date}）
+- 大运：{dayun_gz}  流年：{liuyear_gz}  流月：{liuyue_gz}  流日：{liuri_gz}
+- 今日干支：{liuri_gz}  建除：{zhi_xing}日  纳音：{nayin}
+- 天干{liuri_gz[0] if liuri_gz else ''}（{gan_shishen}）：{gan_daily}
+- 地支{liuri_gz[1] if len(liuri_gz)>1 else ''}（{zhi_shishen}）：{zhi_daily}
+- 今日冲：{chong}  煞方：{sha_dir}方
+
+## 黄历宜忌
+- 宜：{yi_str}
+- 忌：{ji_str}
+
+## 今日与命局的互动
+{inter_text}
+
+## 方位与幸运
+- 喜神方位：{positions.get('xi','')}  财神方位：{positions.get('cai','')}  福神方位：{positions.get('fu','')}
+- 幸运色：{lucky_colors or '根据用神判断'}
+- 适宜食物：{lucky_foods or '均衡饮食'}
+
+## 写作要求
+请写一份350-500字的今日运势早安推送，语气亲切自然，像命理师朋友发早安消息：
+
+1. **今日气场**（2-3句）：
+   - 说明今天{liuri_gz}叠加在当前大运流年流月上的整体气场
+   - 可以用命理术语，但要解释"为什么"——比如"今天食神当令，食神代表才华和享受，所以适合..."
+
+2. **今日重点提示**（1-2条，有则写，无则说平稳）：
+   - 如有刑冲：说明是什么冲/刑，以及对命主自己的具体影响
+     ⚠️ 重要：冲的是命主自己命局里的地支，要说"命局XX柱受冲，代表XX方面有变动"，而不是"避免与属XX的人起冲突"
+   - 如有合：说明合而不化的稳定作用
+   - 如无：说明今天运势平稳，可以放心推进事项
+
+3. **黄历小贴士**（1条）：从宜忌中挑一条最实用的，结合今日干支说明为什么今天适合/不适合
+
+4. **今日幸运提示**（简洁列出）：
+   - 幸运色：{lucky_colors}（穿搭或配件点缀）
+   - 适宜食物：{lucky_foods}
+   - 出行方位：{positions.get('xi','').replace('（','').replace('）','')}方向运气更好，财神在{positions.get('cai','').replace('（','').replace('）','')}
+
+5. **结尾**：一句温暖鼓励的话
+
+## 注意事项
+- 专业术语可以用，但每个术语后面要解释它对今天的实际影响
+- 不需要列出命盘四柱，不需要分析妻财子禄寿
+- 刑冲是冲命主自己的命局，要说对命主的影响，不是说"避免与属XX的人起冲突"
+- 如果今日有刑冲，要具体说明影响，不要只说"需防"或"注意"
+- 字数控制在350-500字
+"""
+
+    return {
+        'system_context': system_context,
+        'writing_prompt': writing_prompt,
+        'usage_note': (
+            'OpenClaw 处理说明：将 writing_prompt 作为用户消息发给 MiniMax，'
+            'system_context 作为结构化背景数据注入对话上下文。'
+        ),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# 主流程
+# ─────────────────────────────────────────────────────────────────
+
+def run(year, month, day, hour, minute, gender, city, level, current_year=None):
+    """
+    完整分析流程：
+      1. 排盘（bazi_chart）
+      2. 分析（lib/）
+      3. 组装输出
+    """
+    cur_year = current_year or datetime.now().year
+
+    # ── 1. 排盘 ────────────────────────────────────────────────────
+    chart = build_bazi_chart(
+        year=year, month=month, day=day,
+        hour=hour, minute=minute,
+        gender=gender, city=city,
+        current_year=cur_year,
+    )
+
+    if not chart.get('success'):
+        return {'success': False, 'error': chart.get('error', '排盘失败')}
+
+    # quick 模式只返回排盘结果
+    if level == 'quick':
+        return {
+            'success':    True,
+            'level':      'quick',
+            'chart':      chart,
+            'generated_at': datetime.now().isoformat(),
+        }
+
+    # ── 2. 适配 pillars 格式供 lib/ 使用 ──────────────────────────
+    pillars = _adapt_pillars(chart)
+
+    # ── 3. 分析层（lib/）──────────────────────────────────────────
+    analysis = {}
+
+    try:
+        ten_gods = analyze_ten_gods(pillars)
+        dominant = get_dominant_ten_gods(ten_gods)
+        fmt      = format_full_analysis(pillars, ten_gods)
+
+        # 把用神信息写回 chart，供 luck_cycle_analyzer 使用
+        chart['yong_shen'] = fmt.get('yong_shen', {})
+
+        analysis['ten_gods']       = ten_gods
+        analysis['dominant_gods']  = dominant
+        ys = fmt['yong_shen']
+        analysis['format_analysis'] = {
+            'format_name':      fmt['format']['format_name'],
+            'strength':         ys.get('strength', ''),
+            'strength_score':   ys.get('strength_score', ''),
+            'yong_shen':        ys.get('yong_shen', ''),
+            'yong_shen_secondary': ys.get('yong_shen_secondary', ''),
+            'yong_list':        ys.get('yong_list', []),
+            'ji_shen':          ys.get('ji_shen', []),
+            'method':           ys.get('method', ''),
+            'tiaohou':          ys.get('tiaohou'),
+            'temp_score':       ys.get('temp_score', 0),
+            'is_cong_ge':       fmt['format'].get('is_cong_ge', False),
+            'summary':          fmt.get('summary', ''),
+        }
+    except Exception as e:
+        analysis['format_analysis'] = {'error': str(e)}
+
+    try:
+        analysis['character'] = build_character_profile(
+            pillars, ten_gods, fmt, dominant
+        )
+    except Exception as e:
+        analysis['character'] = {'error': str(e)}
+
+    try:
+        analysis['six_relations'] = analyze_six_relations(
+            pillars, ten_gods, fmt.get('yong_shen', {}), gender
+        )
+    except Exception as e:
+        analysis['six_relations'] = {'error': str(e)}
+
+    try:
+        analysis['wealth_career'] = analyze_wealth_career(
+            pillars, ten_gods, fmt, fmt.get('yong_shen', {})
+        )
+    except Exception as e:
+        analysis['wealth_career'] = {'error': str(e)}
+
+    try:
+        from lib.ganzhi_calculator import get_element_counts
+        element_counts = get_element_counts(pillars)
+        analysis['health'] = predict_health(pillars, fmt.get('yong_shen', {}))
+    except Exception as e:
+        analysis['health'] = {'error': str(e)}
+
+    try:
+        analysis['luck'] = analyze_current_luck(chart, cur_year)
+    except Exception as e:
+        analysis['luck'] = {'error': str(e)}
+
+    try:
+        analysis['advice'] = generate_advice(
+            pillars, fmt.get('yong_shen', {}), fmt
+        )
+    except Exception as e:
+        analysis['advice'] = {'error': str(e)}
+
+    # ── 五运分析（妻财子禄寿）────────────────────────────────────
+    try:
+        wuyu_analyzer = WuyuAnalyzer(chart)
+        analysis['wuyu'] = wuyu_analyzer.analyze_current()
+    except Exception as e:
+        analysis['wuyu'] = {'error': str(e)}
+
+    # ── 4. 古籍引用 ────────────────────────────────────────────────
+    try:
+        fmt_name = analysis.get('format_analysis', {}).get('format_name', '')
+        day_gan  = chart.get('day_gan', '')
+        passages = get_relevant_passages(fmt_name, day_master=day_gan)
+        analysis['classic_passages'] = passages
+    except Exception as e:
+        analysis['classic_passages'] = []
+
+    # ── 5. 生成报告文字 ────────────────────────────────────────────
+    full_report = _build_report_text(chart, analysis)
+
+    # ── 6. 生成 LLM prompt（供 MiniMax 润色成有温度的文字）────────
+    prompt_for_llm = _build_llm_prompt(chart, analysis)
+
+    return {
+        'success':        True,
+        'level':          level,
+        'chart':          chart,
+        'analysis':       analysis,
+        'full_report':    full_report,
+        'prompt_for_llm': prompt_for_llm,
+        'generated_at':   datetime.now().isoformat(),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# 命令行入口
+# ─────────────────────────────────────────────────────────────────
 
 def main():
-    # 解析参数：year, month, day, hour, gender, city
-    args = sys.argv[1:]
-    
-    cmd = ['python3', BAZI_SCRIPT]
-    
-    i = 0
-    while i < len(args):
-        if args[i] in ('--year', '--month', '--day', '--hour', '--minute', '--second'):
-            cmd.extend([args[i], args[i+1]])
-            i += 2
-        elif args[i] == '--gender':
-            cmd.extend([args[i], args[i+1]])
-            i += 2
-        elif args[i] == '--city':
-            cmd.extend([args[i], args[i+1]])
-            i += 2
-        elif args[i] == '--level':
-            cmd.extend([args[i], args[i+1]])
-            i += 2
-        else:
-            i += 1
-    
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if result.returncode == 0:
-            # Strip ANSI color codes before printing so model sees clean text
-            clean = strip_ansi(result.stdout)
-            print(clean)
-        else:
-            print(json.dumps({'success': False, 'error': result.stderr}), file=sys.stderr)
-            sys.exit(1)
-    except subprocess.TimeoutExpired:
-        print(json.dumps({'success': False, 'error': '脚本执行超时（120秒）'}), file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(json.dumps({'success': False, 'error': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='八字精批分析')
+    parser.add_argument('--year',         type=int, required=True)
+    parser.add_argument('--month',        type=int, required=True)
+    parser.add_argument('--day',          type=int, required=True)
+    parser.add_argument('--hour',         type=int, required=True)
+    parser.add_argument('--minute',       type=int, default=0)
+    parser.add_argument('--gender',       type=str, default='male')
+    parser.add_argument('--city',         type=str, default='')
+    parser.add_argument('--level',        type=str, default=None,
+                        choices=['full', 'quick'],
+                        help='兼容旧调用方式，等同于 --mode')
+    parser.add_argument('--current-year', type=int, default=None)
+    parser.add_argument('--mode',         type=str, default='full',
+                        choices=['full', 'quick', 'monthly', 'daily'],
+                        help='full=完整精批, quick=仅排盘, monthly=月运, daily=日运')
+    # 月运 / 日运专用参数
+    parser.add_argument('--liuyear',      type=int, default=None,
+                        help='流年（公历年份），monthly/daily 模式使用，默认今年')
+    parser.add_argument('--liuyue-month', type=int, default=None,
+                        help='流月月序（1=寅月…12=丑月）')
+    parser.add_argument('--liuyue-gz',    type=str, default=None,
+                        help='流月干支（如 丙辰），优先级高于 --liuyue-month')
+    parser.add_argument('--liuri-date',   type=str, default=None,
+                        help='流日日期 YYYY-MM-DD，daily 模式使用，默认今天')
+    args = parser.parse_args()
+
+    # --level 兼容旧调用
+    effective_mode = args.level if args.level else args.mode
+
+    # ── monthly 模式：月运分析 ─────────────────────────────────────
+    if effective_mode == 'monthly':
+        liuyear = args.liuyear or datetime.now().year
+        base_chart = build_bazi_chart(
+            year=args.year, month=args.month, day=args.day,
+            hour=args.hour, minute=args.minute,
+            gender=args.gender, city=args.city,
+            current_year=liuyear,
+        )
+        if not base_chart.get('success'):
+            print(json.dumps({'success': False, 'error': base_chart.get('error', '排盘失败')},
+                             ensure_ascii=False))
+            return
+
+        # ── 1. 排盘层：流年盘 + 流月盘 ────────────────────────────
+        year_chart  = build_year_chart(base_chart, liuyear=liuyear)
+        month_chart = build_month_chart(
+            year_chart,
+            liuyue_month=args.liuyue_month,
+            liuyue_gz=args.liuyue_gz,
+        )
+
+        if not month_chart.get('success'):
+            print(json.dumps(month_chart, ensure_ascii=False, indent=2))
+            return
+
+        # ── 2. 用神信息（需先跑格局分析写回 base_chart）──────────
+        try:
+            pillars_adapted = _adapt_pillars(base_chart)
+            ten_gods = analyze_ten_gods(pillars_adapted)
+            fmt      = format_full_analysis(pillars_adapted, ten_gods)
+            base_chart['yong_shen'] = fmt.get('yong_shen', {})
+        except Exception:
+            pass  # 用神缺失时 wuyu/prompt 降级处理
+
+        # ── 3. 五运分析：原局 + 大运 + 流年 + 流月（四层）────────
+        liuyue_gz  = month_chart.get('liuyue', {}).get('ganzhi', '')
+        dayun_gz   = month_chart.get('dayun', {}).get('ganzhi', '')
+        liuyear_gz = month_chart.get('liuyear', {}).get('ganzhi', '')
+
+        wuyu = {}
+        try:
+            wuyu_analyzer = WuyuAnalyzer(base_chart)
+            if dayun_gz and liuyear_gz and liuyue_gz:
+                wuyu = wuyu_analyzer.analyze_with_liuyue(dayun_gz, liuyear_gz, liuyue_gz)
+            elif dayun_gz and liuyear_gz:
+                wuyu = wuyu_analyzer.analyze_with_liuyear(dayun_gz, liuyear_gz)
+            else:
+                wuyu = wuyu_analyzer.analyze_current()
+        except Exception as e:
+            wuyu = {'error': str(e)}
+
+        # ── 4. 生成 prompt_for_llm ─────────────────────────────────
+        prompt_for_llm = {}
+        try:
+            prompt_for_llm = _build_monthly_prompt(base_chart, month_chart, wuyu)
+        except Exception as e:
+            prompt_for_llm = {'error': str(e)}
+
+        month_chart['wuyu']          = wuyu
+        month_chart['prompt_for_llm'] = prompt_for_llm
+        print(json.dumps(month_chart, ensure_ascii=False, indent=2))
+        return
+
+    # ── daily 模式：日运分析 ───────────────────────────────────────
+    if effective_mode == 'daily':
+        liuyear = args.liuyear or datetime.now().year
+        base_chart = build_bazi_chart(
+            year=args.year, month=args.month, day=args.day,
+            hour=args.hour, minute=args.minute,
+            gender=args.gender, city=args.city,
+            current_year=liuyear,
+        )
+        if not base_chart.get('success'):
+            print(json.dumps({'success': False, 'error': base_chart.get('error', '排盘失败')},
+                             ensure_ascii=False))
+            return
+
+        # ── 1. 排盘层：流年盘 + 流月盘 + 流日盘 ──────────────────
+        year_chart  = build_year_chart(base_chart, liuyear=liuyear)
+        month_chart = build_month_chart(
+            year_chart,
+            liuyue_month=args.liuyue_month,
+            liuyue_gz=args.liuyue_gz,
+        )
+        day_chart = build_day_chart(
+            month_chart,
+            liuri_date=args.liuri_date,
+            hour=args.hour,
+        )
+
+        if not day_chart.get('success'):
+            print(json.dumps(day_chart, ensure_ascii=False, indent=2))
+            return
+
+        # ── 2. 用神信息 ────────────────────────────────────────────
+        try:
+            pillars_adapted = _adapt_pillars(base_chart)
+            ten_gods = analyze_ten_gods(pillars_adapted)
+            fmt      = format_full_analysis(pillars_adapted, ten_gods)
+            base_chart['yong_shen'] = fmt.get('yong_shen', {})
+        except Exception:
+            pass
+
+        # ── 3. 五运分析：原局 + 大运 + 流年 + 流月 + 流日（五层）─
+        liuri_gz   = day_chart.get('liuri', {}).get('ganzhi', '')
+        liuyue_gz  = day_chart.get('liuyue', {}).get('ganzhi', '')
+        dayun_gz   = day_chart.get('dayun', {}).get('ganzhi', '')
+        liuyear_gz = day_chart.get('liuyear', {}).get('ganzhi', '')
+
+        wuyu = {}
+        try:
+            wuyu_analyzer = WuyuAnalyzer(base_chart)
+            if dayun_gz and liuyear_gz and liuyue_gz and liuri_gz:
+                wuyu = wuyu_analyzer.analyze_with_liuri(dayun_gz, liuyear_gz, liuyue_gz, liuri_gz)
+            elif dayun_gz and liuyear_gz and liuyue_gz:
+                wuyu = wuyu_analyzer.analyze_with_liuyue(dayun_gz, liuyear_gz, liuyue_gz)
+            else:
+                wuyu = wuyu_analyzer.analyze_current()
+        except Exception as e:
+            wuyu = {'error': str(e)}
+
+        # ── 4. 生成 prompt_for_llm ─────────────────────────────────
+        prompt_for_llm = {}
+        try:
+            prompt_for_llm = _build_daily_prompt(base_chart, day_chart, wuyu)
+        except Exception as e:
+            prompt_for_llm = {'error': str(e)}
+
+        day_chart['wuyu']           = wuyu
+        day_chart['prompt_for_llm'] = prompt_for_llm
+        print(json.dumps(day_chart, ensure_ascii=False, indent=2))
+        return
+
+    # ── full / quick 模式：完整精批 ────────────────────────────────
+    result = run(
+        year=args.year, month=args.month, day=args.day,
+        hour=args.hour, minute=args.minute,
+        gender=args.gender, city=args.city,
+        level=effective_mode,
+        current_year=args.current_year,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
 
 if __name__ == '__main__':
     main()

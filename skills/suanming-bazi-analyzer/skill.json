@@ -1,0 +1,154 @@
+{
+  "id": "suanming-bazi-analyzer",
+  "name": "八字精批分析器",
+  "version": "1.0.0",
+  "description": "基于子平法的完整八字精批 skill，供算命喵 agent 在分析用户八字时自动调用。涵盖命盘排布、十神分析、性格画像、六亲关系、财富事业、健康预警、大运流年、趋吉避凶七大分析模块。",
+  "author": "算命喵",
+  "entry": "handler.js",
+  "language": "javascript",
+  "runtime": "node",
+  "triggers": [
+    "八字",
+    "四柱",
+    "命盘",
+    "格局",
+    "用神",
+    "大运",
+    "流年",
+    "运势",
+    "性格分析",
+    "婚配",
+    "财运",
+    "事业运",
+    "健康运",
+    "子平",
+    "排盘",
+    "精批"
+  ],
+  "input": {
+    "type": "object",
+    "required": ["year", "month", "day"],
+    "properties": {
+      "year": {
+        "type": "integer",
+        "description": "公历出生年份（如 1990）"
+      },
+      "month": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 12,
+        "description": "公历出生月份（1-12）"
+      },
+      "day": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 31,
+        "description": "公历出生日期（1-31）"
+      },
+      "hour": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 23,
+        "default": 12,
+        "description": "公历出生小时（0-23，不知时辰可填12）"
+      },
+      "gender": {
+        "type": "string",
+        "enum": ["male", "female"],
+        "default": "male",
+        "description": "性别：male（男）| female（女）"
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "description": "完整八字精批报告",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "分析是否成功"
+      },
+      "fullReport": {
+        "type": "string",
+        "description": "完整精批报告文本（分模块展示）"
+      },
+      "sections": {
+        "type": "object",
+        "description": "各模块的结构化分析数据",
+        "properties": {
+          "pillarsDisplay":       { "type": "string",  "description": "四柱干支展示" },
+          "tenGodsAnalysis":      { "type": "object",  "description": "十神分析结果" },
+          "formatAnalysis":       { "type": "object",  "description": "格局分析结果" },
+          "characterProfile":     { "type": "object",  "description": "性格画像" },
+          "sixRelationsAnalysis": { "type": "object",  "description": "六亲关系分析" },
+          "wealthCareerAnalysis": { "type": "object",  "description": "财富事业分析" },
+          "healthAnalysis":       { "type": "object",  "description": "健康预警" },
+          "luckCycleAnalysis":    { "type": "object",  "description": "大运流年分析" },
+          "adviceAnalysis":       { "type": "object",  "description": "趋吉避凶建议" }
+        }
+      },
+      "error": {
+        "type": "string",
+        "description": "错误信息（success=false 时）"
+      }
+    }
+  },
+  "options": {
+    "includeAncientBooks": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否包含古籍引用（需网络，失败时自动降级本地）"
+    },
+    "currentYear": {
+      "type": "integer",
+      "description": "当前年份（用于大运流年计算，默认系统年份）"
+    }
+  },
+  "dependencies": {
+    "node": ">=14.0.0",
+    "external": []
+  },
+  "files": {
+    "entry":   "handler.js",
+    "lib": [
+      "lib/ganzhi-calculator.js",
+      "lib/ten-gods-analyzer.js",
+      "lib/format-analyzer.js",
+      "lib/character-profiler.js",
+      "lib/six-relations-analyzer.js",
+      "lib/wealth-career-analyzer.js",
+      "lib/health-predictor.js",
+      "lib/luck-cycle-analyzer.js",
+      "lib/advice-generator.js",
+      "lib/ancient-books-fetcher.js"
+    ],
+    "data": [
+      "data/classic-wisdom.json",
+      "data/ten-gods-traits.json",
+      "data/industries-mapping.json",
+      "data/feng-shui-data.json"
+    ],
+    "docs": [
+      "SKILL.md",
+      "SCHEMA.md"
+    ]
+  },
+  "knowledge_sources": {
+    "online": {
+      "primary": "https://ctext.org/api.pl",
+      "fallback": "https://archive.org"
+    },
+    "local": "data/classic-wisdom.json"
+  },
+  "cache": {
+    "path": "~/.openclaw/workspace-suanming/memory/knowledge-cache/",
+    "ttl_days": 7
+  },
+  "classic_references": [
+    "梁湘润《子平真诠》",
+    "《三命通会》（万民英）",
+    "《滴天髓》（刘基）",
+    "《渊海子平》（徐升）",
+    "《穷通宝鉴》（余春台）"
+  ]
+}

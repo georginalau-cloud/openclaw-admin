@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+lib/zhi_relations.py - 地支关系分析引擎
+
+统一处理地支之间的所有关系，按力量从强到弱：
+  三会局 > 三合局 > 六合 > 半三合 > 六冲 > 三刑 > 六害 > 相破
+
+重要规则：
+  - 冲可解合：六冲可以破坏六合/三合的化合
+  - 合可制冲：六合/三合可以减弱六冲的破坏力
+  - 三会局力量最强，不被冲破
+  - 同一地支同时存在多种关系时，按优先级取最强者描述
+
+供 luck_cycle_analyzer、wuyu_analyzer、format_analyzer 等模块统一调用。
+"""
+
+from .ganzhi_calculator import (
+    ZHI_SANHUI, ZHI_SANHE, ZHI_BAN_SANHE,
+    ZHI_HE6, ZHI_HE6_ELEMENT,
+    ZHI_CHONG, ZHI_XING, ZHI_HAI, ZHI_PO,
+    ZHI_RELATION_WEIGHTS,
+    BRANCH_ELEMENTS,
+)
+
+
+def analyze_zhi_relations(new_zhi: str, existing_zhis: frozenset) -> dict:
+    """
+    分析一个新地支与现有地支集合之间的所有关系。
+
+    参数：
+        new_zhi:       新加入的地支（大运/流年/流月/流日）
+        existing_zhis: 已有的地支集合（命局 + 已叠加的大运/流年等）
+
+    返回：
+        {
+            'relations': [  # 按力量从强到弱排序
+                {
+                    'type':    '三会',        # 关系类型
+                    'name':    '南方三会火局', # 具体名称
+                    'element': '火',          # 涉及五行
+                    'weight':  4.0,           # 力量权重
+                    'desc':    '...',         # 描述文字
+                    'is_positive': True,      # 是否为正面（合/会为正，冲/刑/害/破为负）
+                }
+            ],
+            'net_score':   2.5,   # 综合得分（正=有利，负=不利）
+            'summary':     '...',  # 一句话总结
+            'dominant':    {...},  # 最强的那个关系
+        }
+    """
+    all_zhis = existing_zhis | {new_zhi}
+    relations = []
+
+    # ── 1. 三会局（力量最强）────────────────────────────────────
+    for members, element, name in ZHI_SANHUI:
+        if new_zhi in members and members.issubset(all_zhis):
+            relations.append({
+                'type':        '三会',
+                'name':        name,
+                'element':     element,
+                'weight':      ZHI_RELATION_WEIGHTS['三会'],
+                'desc':        f'{name}：{element}五行力量极强，可改变命局格局',
+                'is_positive': True,
+                'members':     list(members),
+            })
+
+    # ── 2. 三合局（力量次之）────────────────────────────────────
+    for members, element, name in ZHI_SANHE:
+        if new_zhi in members and members.issubset(all_zhis):
+            # 检查是否已被三会覆盖
+            already_in_sanhui = any(
+                r['type'] == '三会' and set(r['members']) >= members
+                for r in relations
+            )
+            if not already_in_sanhui:
+                # 三合不被六冲破，但旺支被冲时力量削减
+                # 旺支：申子辰→子，寅午戌→午，巳酉丑→酉，亥卯未→卯
+                wang_zhi_map = {
+                    frozenset({'申','子','辰'}): '子',
+                    frozenset({'寅','午','戌'}): '午',
+                    frozenset({'巳','酉','丑'}): '酉',
+                    frozenset({'亥','卯','未'}): '卯',
+                }
+                wang_zhi = wang_zhi_map.get(members, '')
+                wang_zhi_chonged = (
+                    wang_zhi and
+                    ZHI_CHONG.get(wang_zhi) and
+                    ZHI_CHONG[wang_zhi] in all_zhis
+                )
+                weight = ZHI_RELATION_WEIGHTS['三合'] * (0.5 if wang_zhi_chonged else 1.0)
+                note = f'（旺支{wang_zhi}被冲，三合力量减半）' if wang_zhi_chonged else ''
+                relations.append({
+                    'type':        '三合',
+                    'name':        name,
+                    'element':     element,
+                    'weight':      weight,
+                    'desc':        f'{name}：{element}五行聚合，力量较强{note}',
+                    'is_positive': True,
+                    'members':     list(members),
+                })
+
+    # ── 3. 六合（两支相合）──────────────────────────────────────
+    # 理论依据（梁湘润/《子平真诠》）：
+    # 地支六合极难真正化气，大多数情况下是"合而不化"——
+    # 两支相互吸引，有助力，但各自五行属性保留，不改变五行格局。
+    # 只有月令支持化神且无冲破时，才可能真正化气。
+    he6_partner = ZHI_HE6.get(new_zhi)
+    if he6_partner and he6_partner in existing_zhis:
+        he6_element = ZHI_HE6_ELEMENT.get((new_zhi, he6_partner), '')
+        # 冲能破六合：检查是否有六冲破坏此六合
+        chong_of_new  = ZHI_CHONG.get(new_zhi)
+        chong_of_he6  = ZHI_CHONG.get(he6_partner)
+        broken_by_new  = chong_of_new  and chong_of_new  in existing_zhis
+        broken_by_he6  = chong_of_he6  and chong_of_he6  in existing_zhis
+        is_broken = broken_by_new or broken_by_he6
+
+        if not is_broken:
+            # 合而不化（常态）：有助力，但不改变五行属性
+            # 注：化气需月令支持，此处保守处理，不标注化气
+            desc = f'{new_zhi}与{he6_partner}六合，有助力（合而不化，各自五行属性保留）'
+            if he6_element:
+                desc = f'{new_zhi}与{he6_partner}六合（{he6_element}），有助力'
+            relations.append({
+                'type':        '六合',
+                'name':        f'{new_zhi}{he6_partner}六合',
+                'element':     he6_element,
+                'weight':      ZHI_RELATION_WEIGHTS['六合'],
+                'desc':        desc,
+                'is_positive': True,
+                'partner':     he6_partner,
+            })
+        else:
+            breaker = chong_of_new if broken_by_new else chong_of_he6
+            relations.append({
+                'type':        '六合被冲',
+                'name':        f'{new_zhi}{he6_partner}六合被{breaker}冲破',
+                'element':     he6_element,
+                'weight':      0,
+                'desc':        f'{new_zhi}{he6_partner}六合，但{breaker}冲破此合，合力消散',
+                'is_positive': False,
+                'partner':     he6_partner,
+            })
+
+    # ── 4. 半三合（两支）────────────────────────────────────────
+    for zhi_a, zhi_b, element, name in ZHI_BAN_SANHE:
+        if new_zhi == zhi_a and zhi_b in existing_zhis:
+            # 检查是否已被三合/三会覆盖
+            already_covered = any(
+                r['type'] in ('三会', '三合') and
+                zhi_a in r.get('members', []) and zhi_b in r.get('members', [])
+                for r in relations
+            )
+            if not already_covered:
+                relations.append({
+                    'type':        '半三合',
+                    'name':        name,
+                    'element':     element,
+                    'weight':      ZHI_RELATION_WEIGHTS['半三合'],
+                    'desc':        f'{name}：{element}五行有一定聚合力',
+                    'is_positive': True,
+                    'partner':     zhi_b,
+                })
+        elif new_zhi == zhi_b and zhi_a in existing_zhis:
+            already_covered = any(
+                r['type'] in ('三会', '三合') and
+                zhi_a in r.get('members', []) and zhi_b in r.get('members', [])
+                for r in relations
+            )
+            if not already_covered:
+                relations.append({
+                    'type':        '半三合',
+                    'name':        name,
+                    'element':     element,
+                    'weight':      ZHI_RELATION_WEIGHTS['半三合'],
+                    'desc':        f'{name}：{element}五行有一定聚合力',
+                    'is_positive': True,
+                    'partner':     zhi_a,
+                })
+
+    # ── 5. 六冲（动荡破坏）──────────────────────────────────────
+    chong_partner = ZHI_CHONG.get(new_zhi)
+    if chong_partner and chong_partner in existing_zhis:
+        # 三会/三合可以抵抗六冲（六合不能制冲）
+        # 检查被冲的支是否在三会/三合局中
+        in_sanhui = any(
+            r['type'] == '三会' and chong_partner in r.get('members', [])
+            for r in relations
+        )
+        in_sanhe = any(
+            r['type'] == '三合' and chong_partner in r.get('members', [])
+            for r in relations
+        )
+        if in_sanhui:
+            # 三会最强，冲力被完全压制
+            relations.append({
+                'type':        '冲被三会压制',
+                'name':        f'{new_zhi}冲{chong_partner}（被三会压制）',
+                'element':     BRANCH_ELEMENTS.get(chong_partner, ''),
+                'weight':      0,
+                'desc':        f'{new_zhi}冲{chong_partner}，但{chong_partner}在三会局中，冲力被压制',
+                'is_positive': False,
+                'partner':     chong_partner,
+            })
+        elif in_sanhe:
+            # 三合削减冲力约50%
+            weight = ZHI_RELATION_WEIGHTS['六冲'] * 0.5
+            relations.append({
+                'type':        '六冲（三合减弱）',
+                'name':        f'{new_zhi}冲{chong_partner}（三合减弱）',
+                'element':     BRANCH_ELEMENTS.get(chong_partner, ''),
+                'weight':      weight,
+                'desc':        f'{new_zhi}冲{chong_partner}，{chong_partner}在三合局中，冲力减半',
+                'is_positive': False,
+                'partner':     chong_partner,
+            })
+        else:
+            relations.append({
+                'type':        '六冲',
+                'name':        f'{new_zhi}冲{chong_partner}',
+                'element':     BRANCH_ELEMENTS.get(chong_partner, ''),
+                'weight':      ZHI_RELATION_WEIGHTS['六冲'],
+                'desc':        f'{new_zhi}冲{chong_partner}，动荡变化，{chong_partner}所代表的事项受冲',
+                'is_positive': False,
+                'partner':     chong_partner,
+            })
+
+    # ── 6. 三刑（摩擦压力）──────────────────────────────────────
+    xing_partners = ZHI_XING.get(new_zhi, [])
+    for xing_p in xing_partners:
+        if xing_p in existing_zhis and xing_p != new_zhi:
+            relations.append({
+                'type':        '三刑',
+                'name':        f'{new_zhi}刑{xing_p}',
+                'element':     BRANCH_ELEMENTS.get(xing_p, ''),
+                'weight':      ZHI_RELATION_WEIGHTS['三刑'],
+                'desc':        f'{new_zhi}刑{xing_p}，摩擦压力，易生是非口舌或健康问题',
+                'is_positive': False,
+                'partner':     xing_p,
+            })
+        elif xing_p == new_zhi and new_zhi in existing_zhis:
+            # 自刑
+            relations.append({
+                'type':        '自刑',
+                'name':        f'{new_zhi}自刑',
+                'element':     BRANCH_ELEMENTS.get(new_zhi, ''),
+                'weight':      ZHI_RELATION_WEIGHTS['三刑'] * 0.7,
+                'desc':        f'{new_zhi}自刑，内耗较重，易有自我矛盾或反复',
+                'is_positive': False,
+                'partner':     new_zhi,
+            })
+
+    # ── 7. 六害（力量较弱）──────────────────────────────────────
+    hai_partner = ZHI_HAI.get(new_zhi)
+    if hai_partner and hai_partner in existing_zhis:
+        relations.append({
+            'type':        '六害',
+            'name':        f'{new_zhi}害{hai_partner}',
+            'element':     BRANCH_ELEMENTS.get(hai_partner, ''),
+            'weight':      ZHI_RELATION_WEIGHTS['六害'],
+            'desc':        f'{new_zhi}与{hai_partner}相害，暗中损耗，需防小人或暗伤',
+            'is_positive': False,
+            'partner':     hai_partner,
+        })
+
+    # ── 8. 相破（力量最弱）──────────────────────────────────────
+    po_partner = ZHI_PO.get(new_zhi)
+    if po_partner and po_partner in existing_zhis:
+        relations.append({
+            'type':        '相破',
+            'name':        f'{new_zhi}破{po_partner}',
+            'element':     BRANCH_ELEMENTS.get(po_partner, ''),
+            'weight':      ZHI_RELATION_WEIGHTS['相破'],
+            'desc':        f'{new_zhi}与{po_partner}相破，小有损耗，影响较轻',
+            'is_positive': False,
+            'partner':     po_partner,
+        })
+
+    # ── 计算综合得分 ─────────────────────────────────────────────
+    net_score = sum(r['weight'] for r in relations)
+
+    # ── 按力量绝对值排序（最强的排前面）────────────────────────
+    relations.sort(key=lambda r: abs(r['weight']), reverse=True)
+
+    # ── 生成总结 ─────────────────────────────────────────────────
+    dominant = relations[0] if relations else None
+    summary = _build_summary(new_zhi, relations, net_score)
+
+    return {
+        'relations':  relations,
+        'net_score':  round(net_score, 2),
+        'summary':    summary,
+        'dominant':   dominant,
+        'has_sanhui': any(r['type'] == '三会' for r in relations),
+        'has_sanhe':  any(r['type'] == '三合' for r in relations),
+        'has_chong':  any(r['type'] == '六冲' for r in relations),
+        'has_he':     any(r['type'] in ('六合', '半三合') for r in relations),
+        'has_xing':   any(r['type'] in ('三刑', '自刑') for r in relations),
+        'has_hai':    any(r['type'] == '六害' for r in relations),
+    }
+
+
+def analyze_all_zhi_relations(pillars_zhis: list) -> list:
+    """
+    分析命局内部所有地支之间的关系（用于原局分析）。
+
+    参数：
+        pillars_zhis: 四柱地支列表，如 ['巳', '丑', '酉', '未']
+
+    返回：关系列表
+    """
+    results = []
+    zhi_set = frozenset(pillars_zhis)
+
+    # 检测三会局
+    for members, element, name in ZHI_SANHUI:
+        if members.issubset(zhi_set):
+            results.append({
+                'type': '三会', 'name': name, 'element': element,
+                'weight': ZHI_RELATION_WEIGHTS['三会'],
+                'desc': f'命局{name}，{element}五行力量极强',
+                'is_positive': True,
+                'members': list(members),
+            })
+
+    # 检测三合局（未被三会覆盖的）
+    for members, element, name in ZHI_SANHE:
+        if members.issubset(zhi_set):
+            covered = any(
+                r['type'] == '三会' and set(r['members']) >= members
+                for r in results
+            )
+            if not covered:
+                results.append({
+                    'type': '三合', 'name': name, 'element': element,
+                    'weight': ZHI_RELATION_WEIGHTS['三合'],
+                    'desc': f'命局{name}，{element}五行聚合',
+                    'is_positive': True,
+                    'members': list(members),
+                })
+
+    # 检测六合
+    checked_he6 = set()
+    for zhi in pillars_zhis:
+        partner = ZHI_HE6.get(zhi)
+        if partner and partner in zhi_set and (zhi, partner) not in checked_he6:
+            checked_he6.add((zhi, partner))
+            checked_he6.add((partner, zhi))
+            element = ZHI_HE6_ELEMENT.get((zhi, partner), '')
+            results.append({
+                'type': '六合', 'name': f'{zhi}{partner}六合',
+                'element': element, 'weight': ZHI_RELATION_WEIGHTS['六合'],
+                'desc': f'命局{zhi}与{partner}六合（{element}），有助力，合而不化',
+                'is_positive': True,
+            })
+
+    # 检测六冲
+    checked_chong = set()
+    for zhi in pillars_zhis:
+        partner = ZHI_CHONG.get(zhi)
+        if partner and partner in zhi_set and (zhi, partner) not in checked_chong:
+            checked_chong.add((zhi, partner))
+            checked_chong.add((partner, zhi))
+            results.append({
+                'type': '六冲', 'name': f'{zhi}冲{partner}',
+                'element': BRANCH_ELEMENTS.get(partner, ''),
+                'weight': ZHI_RELATION_WEIGHTS['六冲'],
+                'desc': f'命局{zhi}冲{partner}，动荡变化',
+                'is_positive': False,
+            })
+
+    # 检测三刑
+    checked_xing = set()
+    for zhi in pillars_zhis:
+        for xing_p in ZHI_XING.get(zhi, []):
+            if xing_p in zhi_set and (zhi, xing_p) not in checked_xing:
+                checked_xing.add((zhi, xing_p))
+                if xing_p != zhi:
+                    checked_xing.add((xing_p, zhi))
+                results.append({
+                    'type': '三刑' if xing_p != zhi else '自刑',
+                    'name': f'{zhi}刑{xing_p}',
+                    'element': BRANCH_ELEMENTS.get(xing_p, ''),
+                    'weight': ZHI_RELATION_WEIGHTS['三刑'],
+                    'desc': f'命局{zhi}刑{xing_p}，摩擦压力',
+                    'is_positive': False,
+                })
+
+    # 检测六害
+    checked_hai = set()
+    for zhi in pillars_zhis:
+        partner = ZHI_HAI.get(zhi)
+        if partner and partner in zhi_set and (zhi, partner) not in checked_hai:
+            checked_hai.add((zhi, partner))
+            checked_hai.add((partner, zhi))
+            results.append({
+                'type': '六害', 'name': f'{zhi}害{partner}',
+                'element': BRANCH_ELEMENTS.get(partner, ''),
+                'weight': ZHI_RELATION_WEIGHTS['六害'],
+                'desc': f'命局{zhi}与{partner}相害，暗中损耗',
+                'is_positive': False,
+            })
+
+    results.sort(key=lambda r: abs(r['weight']), reverse=True)
+    return results
+
+
+def _build_summary(new_zhi: str, relations: list, net_score: float) -> str:
+    """生成地支关系一句话总结"""
+    if not relations:
+        return f'{new_zhi}与命局无明显刑冲合，运势平稳'
+
+    dominant = relations[0]
+    rel_type = dominant['type']
+    rel_name = dominant['name']
+
+    if net_score >= 3:
+        tone = '运势大旺'
+    elif net_score >= 1:
+        tone = '运势有助'
+    elif net_score >= -1:
+        tone = '吉凶参半'
+    elif net_score >= -2:
+        tone = '运势受阻'
+    else:
+        tone = '运势大损'
+
+    rel_count = len(relations)
+    if rel_count == 1:
+        return f'{new_zhi}与命局：{rel_name}，{tone}'
+    else:
+        other_names = '、'.join(r['name'] for r in relations[1:3])
+        return f'{new_zhi}与命局：主要为{rel_name}，另有{other_names}，综合{tone}'
+
+
+def score_relation_for_element(relations: list, target_element: str) -> float:
+    """
+    计算地支关系对特定五行的净影响分数。
+    用于判断某个五行（用神/忌神）在这些关系中是被加强还是被削弱。
+
+    参数：
+        relations:      analyze_zhi_relations 返回的关系列表
+        target_element: 目标五行（如用神'火'）
+
+    返回：正数=有利，负数=不利
+    """
+    score = 0.0
+    for r in relations:
+        element = r.get('element', '')
+        weight  = r['weight']
+        if element == target_element:
+            # 合/会强化该五行 → 正分；冲/刑/害弱化 → 负分
+            score += weight  # weight 本身已经有正负
+    return score
